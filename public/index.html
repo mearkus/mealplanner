@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6b4f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Meals">
+  <title>Our Meals</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="page-title">Our Meals</h1>
+    <span id="sync-dot" title="Synced"></span>
+  </header>
+  <main id="view" aria-live="polite"></main>
+  <nav class="tabs" id="tabs" hidden>
+    <a href="#/plan" data-tab="plan"><span class="ico">📅</span>Plan</a>
+    <a href="#/ideas" data-tab="ideas"><span class="ico">💡</span>Ideas</a>
+    <a href="#/shop" data-tab="shop"><span class="ico">🛒</span>Shop</a>
+    <a href="#/recipes" data-tab="recipes"><span class="ico">📖</span>Recipes</a>
+    <a href="#/more" data-tab="more"><span class="ico">⋯</span>More</a>
+  </nav>
+  <div id="toast" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
