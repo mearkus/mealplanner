@@ -1,5 +1,7 @@
 // Adds a few sample recipes so you can try the app before importing your own.
-import { openDb, saveRecipe, listRecipes, logCooked } from '../server/db.js';
+import { openDb, saveRecipe, listRecipes, logCooked, createUser, createHousehold } from '../server/db.js';
+import { hashPassword } from '../server/auth.js';
+import { resolveFamily } from './family.js';
 
 const SAMPLES = [
   { title: 'Chicken Tinga Tacos', servings: 4, prepMinutes: 35, tags: ['mexican'], favorite: true, cooked: 40,
@@ -26,13 +28,20 @@ const SAMPLES = [
 ];
 
 openDb();
-if (listRecipes({ withIngredients: false }).length && !process.argv.includes('--force')) {
+let hid = resolveFamily(process.argv);
+if (!hid) {
+  // Fresh server: create a demo login so you can look around.
+  const uid = createUser({ email: 'demo@example.com', name: 'Demo', passwordHash: await hashPassword('demo-password') });
+  hid = createHousehold('Demo family', uid);
+  console.log('Created demo login: demo@example.com / demo-password');
+}
+if (listRecipes(hid, { withIngredients: false }).length && !process.argv.includes('--force')) {
   console.log('Recipes already exist; not seeding (use --force to add samples anyway).');
   process.exit(0);
 }
 for (const s of SAMPLES) {
   const { cooked, ...recipe } = s;
-  const id = saveRecipe({ ...recipe, source: 'sample' });
-  if (cooked) logCooked(id, new Date(Date.now() - cooked * 86400000).toISOString().slice(0, 10));
+  const id = saveRecipe(hid, { ...recipe, source: 'sample' });
+  if (cooked) logCooked(hid, id, { date: new Date(Date.now() - cooked * 86400000).toISOString().slice(0, 10) });
 }
 console.log(`Added ${SAMPLES.length} sample recipes.`);

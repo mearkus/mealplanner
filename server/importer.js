@@ -1,5 +1,7 @@
 // Turn a file (from Dropbox, an upload, a local folder or a URL) into saved recipes.
 import path from 'node:path';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import mammoth from 'mammoth';
 import { parseRecipeText } from './parser.js';
 import { aiEnabled, extractRecipes } from './ai.js';
@@ -130,27 +132,52 @@ export async function extractFromFile(name, buffer) {
  * Import a file and save its recipes. Skips files already imported (by sourcePath) unless force.
  * @returns {{status: 'imported'|'skipped'|'empty', ids: number[]}}
  */
-export async function importFile({ name, buffer, sourcePath = null, sourceRev = null, source = 'upload', force = false }) {
+export async function importFile(hid, { name, buffer, sourcePath = null, sourceRev = null, source = 'upload', force = false }) {
   if (sourcePath && !force) {
-    const existing = findBySourcePath(sourcePath) || findBySourcePath(`${sourcePath}#1`);
+    const existing = findBySourcePath(hid, sourcePath) || findBySourcePath(hid, `${sourcePath}#1`);
     if (existing) return { status: 'skipped', ids: [existing.id] };
   }
   const recipes = (await extractFromFile(name, buffer)).filter((r) => r.title && r.ingredients?.length);
   if (!recipes.length) return { status: 'empty', ids: [] };
   const ids = recipes.map((r, idx) => {
     const sp = sourcePath ? (recipes.length > 1 ? `${sourcePath}#${idx + 1}` : sourcePath) : null;
-    const existing = sp ? findBySourcePath(sp) : null;
-    return saveRecipe({ ...r, source, sourcePath: sp, sourceRev }, existing?.id ?? null);
+    const existing = sp ? findBySourcePath(hid, sp) : null;
+    return saveRecipe(hid, { ...r, source, sourcePath: sp, sourceRev }, existing?.id ?? null);
   });
   return { status: 'imported', ids };
 }
 
-export async function importUrl(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HouseholdMealPlanner/1.0)' } });
+function isPrivateAddress(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith('::ffff:')) return isPrivateAddress(v6.slice(7));
+  return v6 === '::1' || v6 === '::' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80');
+}
+
+/** Refuse links that point at the server's own network (localhost, cloud metadata, LAN). */
+export async function assertPublicUrl(url) {
+  const u = new URL(url);
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Only http(s) links are supported');
+  const addrs = await dns.lookup(u.hostname.replace(/^\[|\]$/g, ''), { all: true }).catch(() => []);
+  if (!addrs.length) throw new Error("Couldn't find that website");
+  if (addrs.some((a) => isPrivateAddress(a.address))) throw new Error('That link points to a private network address');
+}
+
+export async function importUrl(hid, url) {
+  let current = url; let res;
+  for (let hop = 0; hop < 5; hop++) {
+    await assertPublicUrl(current);
+    res = await fetch(current, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HouseholdMealPlanner/1.0)' } });
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) { current = new URL(res.headers.get('location'), current).href; continue; }
+    break;
+  }
   if (!res.ok) throw new Error(`Could not fetch page (${res.status})`);
   const html = await res.text();
   const ld = recipesFromJsonLd(html);
   const recipes = ld.length ? ld : (await extractFromFile('page.html', Buffer.from(html)));
   const good = recipes.filter((r) => r.title && r.ingredients?.length);
-  return good.map((r) => saveRecipe({ ...r, source: 'web', notes: [r.notes, `Source: ${url}`].filter(Boolean).join('\n') }));
+  return good.map((r) => saveRecipe(hid, { ...r, source: 'web', notes: [r.notes, `Source: ${url}`].filter(Boolean).join('\n') }));
 }

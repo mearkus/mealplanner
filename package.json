@@ -13,7 +13,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
     "import": "node --disable-warning=ExperimentalWarning scripts/import-folder.js",
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
-    "icons": "node scripts/icons.cjs"
+    "icons": "node scripts/icons.cjs",
+    "reset-password": "node --disable-warning=ExperimentalWarning scripts/reset-password.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

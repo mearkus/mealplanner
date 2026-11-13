@@ -33,8 +33,9 @@ async function api(path, opts = {}) {
     init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body);
   } else if (opts.body !== undefined) init.body = opts.body;
   const res = await fetch(`/api${path}`, init);
-  if (res.status === 401 && path !== '/login') { location.hash = '#/login'; throw new Error('Please log in'); }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && !path.startsWith('/auth/') && !path.startsWith('/me/password')) { location.hash = '#/login'; throw new Error('Please log in'); }
+  if (res.status === 409 && data.code === 'no_family') { location.hash = '#/welcome'; throw new Error('Please log in'); }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   if (init.method !== 'GET') state.recipesCache = null;
   return data;
@@ -61,15 +62,82 @@ async function recipes() {
 // ---------- views ----------
 const views = {};
 
+const PUBLIC_ROUTES = new Set(['login', 'signup', 'join', 'welcome']);
+
 views.login = async () => {
-  $tabs.hidden = true; setTitle('Our Meals');
+  setTitle('Our Meals');
   $view.innerHTML = `
     <form class="card login" data-form="login">
-      <h2>Welcome 👋</h2>
-      <p class="muted">Enter your household password.</p>
-      <input type="password" name="password" autocomplete="current-password" placeholder="Password" required autofocus>
+      <h2>Welcome back 👋</h2>
+      <input type="email" name="email" autocomplete="username" placeholder="Email" required autofocus>
+      <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
       <button class="primary">Log in</button>
+      <p class="small muted">New here? <a href="#/signup">Create an account</a></p>
     </form>`;
+};
+
+function signupFields() {
+  return `
+    <input name="name" autocomplete="name" placeholder="Your first name" required>
+    <input type="email" name="email" autocomplete="username" placeholder="Email" required>
+    <input type="password" name="password" autocomplete="new-password" placeholder="Password (8+ characters)" minlength="8" required>`;
+}
+
+views.signup = async () => {
+  setTitle('Our Meals');
+  const s = await fetch('/api/session').then((r) => r.json());
+  const canStart = s.firstRun || s.openSignup || s.signupCodeRequired;
+  $view.innerHTML = `
+    <div class="card login">
+      <h2>Create your account</h2>
+      ${canStart ? `
+        <form data-form="signup" class="stack">
+          ${signupFields()}
+          <input name="familyName" placeholder="Family name (e.g. The Smiths)">
+          ${s.signupCodeRequired && !s.firstRun ? '<input name="signupCode" placeholder="Sign-up code from whoever runs this server" required>' : ''}
+          <button class="primary">Create account & family</button>
+        </form>
+        <p class="small muted">Joining someone's family? Open the invite link they sent you instead.</p>` : `
+        <p>To join, ask someone in your family for an <strong>invite link</strong> (More → Family → Invite) and open it on this device.</p>
+        <form data-form="go-invite" class="row gap"><input name="code" placeholder="…or type the invite code" class="grow" required><button>Go</button></form>`}
+      <p class="small muted">Already have an account? <a href="#/login">Log in</a></p>
+    </div>`;
+};
+
+views.join = async (code) => {
+  setTitle('Join family');
+  let inv;
+  try { inv = await api(`/invites/${encodeURIComponent(code)}`); } catch (err) {
+    $view.innerHTML = `<div class="card login"><h2>Invite not valid</h2><p>${esc(err.message)}</p><p class="small">Ask for a new link.</p><a class="btn" href="#/login">Log in</a></div>`;
+    return;
+  }
+  const s = await fetch('/api/session').then((r) => r.json());
+  const intro = `<h2>Join ${esc(inv.familyName)} 🏡</h2><p class="muted">${inv.invitedBy ? `${esc(inv.invitedBy)} invited you to` : 'You\'re invited to'} share recipes, meal plans and shopping lists.</p>`;
+  if (s.authed) {
+    $view.innerHTML = `<div class="card login">${intro}
+      ${s.hasFamily ? '<p class="small danger">You\'ll leave your current family. Its recipes stay with the people still in it.</p>' : ''}
+      <button class="primary" data-action="join-family" data-code="${esc(code)}">Join ${esc(inv.familyName)}</button>
+      <a class="btn" href="#/plan">Not now</a></div>`;
+  } else {
+    $view.innerHTML = `<div class="card login">${intro}
+      <form data-form="signup" class="stack"><input type="hidden" name="inviteCode" value="${esc(code)}">${signupFields()}
+        <button class="primary">Create account & join</button></form>
+      <p class="small muted">Already have an account? <a href="#/login?next=${encodeURIComponent(`/join/${code}`)}">Log in to join</a></p></div>`;
+  }
+};
+
+views.welcome = async () => {
+  setTitle('Our Meals');
+  const me = await api('/me');
+  if (me.family) { location.hash = '#/plan'; return; }
+  $view.innerHTML = `
+    <div class="card login">
+      <h2>Hi ${esc(me.user.name)} 👋</h2>
+      <p class="muted">You're not in a family yet. Start one, or join with an invite code.</p>
+      <form data-form="create-family" class="stack"><input name="name" placeholder="Family name" value="${esc(me.user.name)}'s family"><button class="primary">Start a family</button></form>
+      <form data-form="go-invite" class="row gap"><input name="code" placeholder="Invite code" class="grow" required><button>Join</button></form>
+      <button class="link" data-action="logout">Log out</button>
+    </div>`;
 };
 
 views.plan = async () => {
@@ -102,6 +170,7 @@ views.plan = async () => {
                 </select>
                 <label class="servings">🍽 <input type="number" min="1" max="30" value="${p.servings || p.recipe.servings}" data-action="plan-servings" data-id="${p.id}" aria-label="Servings"></label>
               </div>
+              ${p.addedBy ? `<div class="small muted">added by ${esc(p.addedBy)}</div>` : ''}
             </div>
             <div class="actions">
               <button class="icon" data-action="plan-cooked" data-id="${p.id}" title="We cooked this">✅</button>
@@ -199,7 +268,7 @@ views.shop = async () => {
     </li>`;
   const manualRow = (m) => `
     <li class="shop-item ${m.checked ? 'done' : ''}">
-      <label><input type="checkbox" data-action="manual-check" data-id="${m.id}" ${m.checked ? 'checked' : ''}><span class="name">${esc(m.label)}</span></label>
+      <label><input type="checkbox" data-action="manual-check" data-id="${m.id}" ${m.checked ? 'checked' : ''}><span class="name">${esc(m.label)}</span>${m.addedBy ? `<span class="amt small">${esc(m.addedBy)}</span>` : ''}</label>
       <button class="icon small" data-action="manual-del" data-id="${m.id}" title="Remove">✕</button>
     </li>`;
   $view.innerHTML = `
@@ -316,15 +385,29 @@ views.edit = async (rid) => {
 
 views.more = async () => {
   setTitle('Import & more');
-  const [status, history] = await Promise.all([api('/dropbox'), api('/history?limit=20')]);
+  const [status, history, me, invites] = await Promise.all([api('/dropbox'), api('/history?limit=20'), api('/me'), api('/family/invites')]);
+  const owner = me.user.role === 'owner';
   state.status = await api('/status');
   const ai = state.status.ai;
   const sync = status.sync;
   $view.innerHTML = `
     <div class="card">
+      <h2>🏡 ${esc(me.family.name)}</h2>
+      <ul class="list compact">${me.family.members.map((m) => `
+        <li class="item"><div class="grow"><strong>${esc(m.name)}</strong>${m.id === me.user.id ? ' (you)' : ''} ${m.role === 'owner' ? '<span class="chip">owner</span>' : ''}<div class="small muted">${esc(m.email)}</div></div>
+        ${owner && m.id !== me.user.id ? `<button class="icon small" data-action="remove-member" data-id="${m.id}" data-name="${esc(m.name)}" title="Remove from family">✕</button>` : ''}</li>`).join('')}</ul>
+      <div class="row gap wrap"><button class="primary" data-action="invite">✉️ Invite someone</button><button data-action="rename-family">Rename</button></div>
+      <div id="invite-box"></div>
+      ${invites.length ? `<details class="small"><summary>${invites.length} open invite${invites.length > 1 ? 's' : ''}</summary><ul class="list compact">${invites.map((i) => `
+        <li class="item"><div class="grow"><code>${esc(i.code)}</code> <span class="muted">by ${esc(i.createdBy || '?')}, expires ${new Date(i.expiresAt).toLocaleDateString()}</span></div>
+        <button class="icon small" data-action="cancel-invite" data-code="${esc(i.code)}" title="Cancel invite">✕</button></li>`).join('')}</ul></details>` : ''}
+      <p class="small muted">Everyone in the family shares recipes, the plan, the shopping list, favourites and the Dropbox connection.</p>
+    </div>
+
+    <div class="card">
       <h2>📦 Dropbox recipes</h2>
       ${status.connected ? `
-        <p>Connected${status.account ? ` as <strong>${esc(status.account)}</strong>` : ''}.</p>
+        <p>Connected${status.account ? ` to <strong>${esc(status.account)}</strong>'s Dropbox` : ''}${status.connectedBy ? ` by ${esc(status.connectedBy)}` : ''} — shared with everyone in ${esc(me.family.name)}.</p>
         <form class="row gap" data-form="dropbox-folder">
           <input name="folder" value="${esc(status.folder)}" placeholder="/Recipes" class="grow" aria-label="Dropbox folder">
           <button>Save folder</button>
@@ -336,6 +419,7 @@ views.more = async () => {
         </div>
         <div id="sync-status">${syncHtml(sync, status.lastSync)}</div>
       ` : `
+        <p class="small">Connect once and everyone in your family can import from it. The access key stays on the server.</p>
         <ol class="steps small">
           <li>Go to <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noopener">dropbox.com/developers/apps</a> → <em>Create app</em> → <em>Scoped access</em> → <em>Full Dropbox</em> (or App folder). Name it anything.</li>
           <li>On the <em>Permissions</em> tab tick <code>files.content.read</code> and press <em>Submit</em>.</li>
@@ -369,16 +453,26 @@ views.more = async () => {
     <div class="card">
       <h2>🕑 Recently cooked</h2>
       ${history.length ? `<ul class="list compact">${history.map((h) => `
-        <li class="item"><div class="grow"><a href="#/recipe/${h.recipeId}">${esc(h.title)}</a> <span class="small muted">${esc(h.cookedOn)}</span></div>
+        <li class="item"><div class="grow"><a href="#/recipe/${h.recipeId}">${esc(h.title)}</a> <span class="small muted">${esc(h.cookedOn)}${h.cookedBy ? ` · ${esc(h.cookedBy)}` : ''}</span></div>
         <button class="icon small" data-action="history-del" data-id="${h.id}" title="Remove">✕</button></li>`).join('')}</ul>`
         : '<p class="muted">Tap ✅ on a planned meal after you cook it — the app uses this to remember favourites you haven\'t had in a while.</p>'}
     </div>
 
     <div class="card">
-      <h2>⚙️ Other</h2>
+      <h2>👤 ${esc(me.user.name)}</h2>
+      <p class="small muted">${esc(me.user.email)}</p>
+      <details><summary>Change name or password</summary>
+        <form data-form="rename-me" class="row gap"><input name="name" value="${esc(me.user.name)}" class="grow" required><button>Save name</button></form>
+        <form data-form="change-password" class="stack">
+          <input type="password" name="current" autocomplete="current-password" placeholder="Current password" required>
+          <input type="password" name="password" autocomplete="new-password" placeholder="New password (8+ characters)" minlength="8" required>
+          <button>Change password</button></form>
+      </details>
       <div class="row gap wrap">
         <a class="btn" href="/api/export">💾 Download backup</a>
         <button data-action="logout">Log out</button>
+        <button class="link" data-action="logout-everywhere">Log out on all devices</button>
+        <button class="link danger" data-action="leave-family">Leave family</button>
       </div>
       <p class="small muted">Tip: open this page in Safari/Chrome and choose <em>Add to Home Screen</em> to use it like an app.</p>
     </div>
@@ -449,7 +543,26 @@ const actions = {
   'dropbox-sync': async () => { await api('/dropbox/sync', { body: {} }); render(); },
   'dropbox-sync-force': async () => { if (confirm('Re-import every file? Edits you made to imported recipes will be replaced.')) { await api('/dropbox/sync', { body: { force: true } }); render(); } },
   'dropbox-disconnect': async () => { if (confirm('Disconnect Dropbox? Imported recipes stay.')) { await api('/dropbox/disconnect', { body: {} }); render(); } },
-  logout: async () => { await api('/logout', { body: {} }); location.hash = '#/login'; },
+  logout: async () => { await api('/auth/logout', { body: {} }); state.recipesCache = null; location.hash = '#/login'; },
+  'logout-everywhere': async () => { if (confirm('Log out on every phone and computer?')) { await api('/me/logout-everywhere', { body: {} }); location.hash = '#/login'; } },
+  'leave-family': async () => { if (confirm('Leave this family? You will lose access to its recipes and plans.')) { await api('/family/leave', { body: {} }); location.hash = '#/welcome'; } },
+  'join-family': async (el) => { await api('/family/join', { body: { code: el.dataset.code } }); state.recipesCache = null; toast('Welcome to the family 🎉'); location.hash = '#/plan'; },
+  'remove-member': async (el) => { if (confirm(`Remove ${el.dataset.name} from the family?`)) { await api(`/family/members/${el.dataset.id}`, { method: 'DELETE' }); render(); } },
+  'rename-family': async () => { const name = prompt('Family name'); if (name?.trim()) { await api('/family', { method: 'PATCH', body: { name } }); render(); } },
+  'cancel-invite': async (el) => { await api(`/family/invites/${encodeURIComponent(el.dataset.code)}`, { method: 'DELETE' }); render(); },
+  invite: async () => {
+    const inv = await api('/family/invites', { body: {} });
+    const url = `${location.origin}/#/join/${inv.code}`;
+    document.getElementById('invite-box').innerHTML = `
+      <div class="invite"><p class="small">Send this link (valid 7 days). They create their own login and join your family:</p>
+      <input readonly value="${esc(url)}" onclick="this.select()">
+      <div class="row gap"><button class="primary" data-action="share-invite" data-url="${esc(url)}">📤 Share</button><span class="small muted">Code: <code>${esc(inv.code)}</code></span></div></div>`;
+  },
+  'share-invite': async (el) => {
+    const text = `Join our family meal planner: ${el.dataset.url}`;
+    if (navigator.share) { try { await navigator.share({ title: 'Our Meals', text, url: el.dataset.url }); return; } catch { /* cancelled */ } }
+    await navigator.clipboard.writeText(el.dataset.url); toast('Link copied');
+  },
 };
 
 const changeActions = {
@@ -474,7 +587,23 @@ function setIdeas(patch) {
 }
 
 const forms = {
-  login: async (f) => { await api('/login', { body: { password: f.password.value } }); location.hash = '#/plan'; },
+  login: async (f) => {
+    const me = await api('/auth/login', { body: { email: f.email.value, password: f.password.value } });
+    const next = new URLSearchParams(location.hash.split('?')[1] || '').get('next');
+    state.recipesCache = null; startSync();
+    location.hash = next ? `#${next}` : me.family ? '#/plan' : '#/welcome';
+  },
+  signup: async (f) => {
+    const body = Object.fromEntries(new FormData(f));
+    await api('/auth/signup', { body });
+    state.recipesCache = null; startSync();
+    toast(body.inviteCode ? 'Welcome to the family 🎉' : 'Account created 🎉');
+    location.hash = '#/plan';
+  },
+  'go-invite': (f) => { location.hash = `#/join/${encodeURIComponent(f.code.value.trim().toUpperCase())}`; },
+  'create-family': async (f) => { await api('/family', { body: { name: f.name.value } }); location.hash = '#/plan'; },
+  'rename-me': async (f) => { await api('/me', { method: 'PATCH', body: { name: f.name.value } }); toast('Saved'); render(); },
+  'change-password': async (f) => { await api('/me/password', { body: { current: f.current.value, password: f.password.value } }); f.reset(); toast('Password changed — other devices were logged out', 4000); },
   'add-suggestions': async (f) => {
     const ids = [...f.querySelectorAll('input[name=r]:checked')].map((i) => Number(i.value));
     if (!ids.length) return toast('Tick at least one meal');
@@ -547,7 +676,7 @@ async function render() {
   const [name, arg] = path.split('/');
   const route = views[name] ? name : 'plan';
   state.route = route;
-  if (route !== 'login') $tabs.hidden = false;
+  $tabs.hidden = PUBLIC_ROUTES.has(route);
   const tab = { recipe: 'recipes', edit: 'recipes' }[route] || route;
   $tabs.querySelectorAll('a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
   try { await views[route](arg); } catch (err) {
@@ -557,7 +686,7 @@ async function render() {
 
 // When the other person changes something, refresh the current screen (unless typing).
 async function checkForChanges() {
-  if (document.hidden || state.route === 'login' || state.route === 'edit') return;
+  if (document.hidden || PUBLIC_ROUTES.has(state.route) || state.route === 'edit') return;
   try {
     const { rev } = await api('/rev');
     if (state.rev && rev !== state.rev && !document.activeElement?.matches('input, textarea, select')) {
@@ -567,16 +696,21 @@ async function checkForChanges() {
     state.rev = rev;
   } catch { /* offline */ }
 }
-setInterval(checkForChanges, 8000);
+let syncInterval;
+function startSync() { clearInterval(syncInterval); state.rev = 0; syncInterval = setInterval(checkForChanges, 8000); }
 document.addEventListener('visibilitychange', checkForChanges);
 
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
 (async () => {
-  const s = await fetch('/api/session').then((r) => r.json()).catch(() => ({ authed: true }));
-  if (!s.authed) location.hash = '#/login';
-  else if (location.hash === '#/login' || !location.hash) location.hash = '#/plan';
-  render();
-  if (s.authed) checkForChanges();
+  const s = await fetch('/api/session').then((r) => r.json()).catch(() => ({ authed: true, hasFamily: true }));
+  const route = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
+  let target = null;
+  if (route === 'join') target = null; // invite links work logged in or out
+  else if (!s.authed) target = s.firstRun ? '#/signup' : (route === 'signup' ? null : '#/login');
+  else if (!s.hasFamily) target = '#/welcome';
+  else if (!route || PUBLIC_ROUTES.has(route)) target = '#/plan';
+  if (target && target !== location.hash) location.hash = target; else render();
+  if (s.authed) { startSync(); checkForChanges(); }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

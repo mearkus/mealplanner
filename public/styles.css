@@ -118,3 +118,8 @@ ol.steps { padding-left: 22px; }
 #toast { position: fixed; left: 50%; bottom: calc(var(--tabs-h) + 20px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); opacity: 0;
   background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; transition: all .2s; pointer-events: none; z-index: 20; max-width: 90vw; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.login .stack + p, .login form + p { margin: 4px 0 0; }
+.invite { margin-top: 10px; padding: 10px; background: var(--bg); border-radius: 10px; }
+.invite input { margin: 6px 0; font-size: .85rem; }
+details form { margin-top: 10px; }
