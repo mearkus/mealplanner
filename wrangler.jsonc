@@ -1,0 +1,34 @@
+{
+  // Cloudflare Workers config. See README → "Deploy to Cloudflare".
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "our-meals",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-01",
+  "build": { "command": "node scripts/vendor.js" },
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "our-meals",
+      // Replace with the id printed by: npx wrangler d1 create our-meals
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "FAMILY_ROOM", "class_name": "FamilyRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FamilyRoom"] }],
+  "vars": {
+    // From Google Cloud Console → Google Auth Platform → Clients (safe to commit; it is public).
+    "GOOGLE_CLIENT_ID": "",
+    // "true" lets anyone with a Google account start a new family (otherwise: first family + invites only).
+    "ALLOW_NEW_FAMILIES": "false"
+  }
+  // Optional secret: SESSION_SECRET (otherwise one is generated and stored in D1 on first use).
+}

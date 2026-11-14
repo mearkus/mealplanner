@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRecipeText } from '../server/parser.js';
-import { recipesFromJsonLd } from '../server/importer.js';
+import { parseRecipeText } from '../public/lib/parser.js';
+import { recipesFromJsonLd } from '../public/lib/extract.js';
 
 test('parses a typical plain-text recipe', () => {
   const r = parseRecipeText(`# Grandma's Chili

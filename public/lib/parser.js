@@ -48,7 +48,13 @@ export function parseRecipeText(text, fallbackTitle = 'Untitled recipe') {
       if (/^\d+[.)]\s+\w+.{40,}/.test(plain)) { mode = 'steps'; } // a long numbered line: steps began
       else { ingredientLines.push(line); continue; }
     }
-    if (mode === 'steps') steps.push(plain.replace(/^(step\s*)?\d+[.):]\s*/i, ''));
+    if (mode === 'steps') {
+      const numbered = /^(step\s*)?\d+[.):]\s*/i.test(plain) || /^[•*\-–·]\s/.test(plain);
+      const prev = steps[steps.length - 1];
+      // A line that isn't numbered and follows an unfinished sentence is the same step wrapped onto a new line (common in PDFs).
+      if (!numbered && prev && !/[.!?:)]$/.test(prev)) steps[steps.length - 1] = `${prev} ${plain}`;
+      else steps.push(plain.replace(/^(step\s*)?\d+[.):]\s*/i, '').replace(/^[•*\-–·]\s/, ''));
+    }
     else if (mode === 'notes') notes.push(plain);
   }
 

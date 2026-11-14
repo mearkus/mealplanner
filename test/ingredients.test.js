@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseIngredientLine, combineAmounts, formatAmount, normalizeName } from '../server/ingredients.js';
+import { parseIngredientLine, combineAmounts, formatAmount, normalizeName } from '../public/lib/ingredients.js';
 
 test('parses quantities, units and names', () => {
   const cases = [

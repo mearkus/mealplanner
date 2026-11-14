@@ -2,23 +2,28 @@
   "name": "mealplanner",
   "version": "1.0.0",
   "private": true,
-  "description": "Shared household meal planner: recipes, weekly plan, smart shopping list.",
+  "description": "Shared family meal planner on Cloudflare Workers: recipes, weekly plan, smart shopping list.",
   "type": "module",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning server/index.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
-    "import": "node --disable-warning=ExperimentalWarning scripts/import-folder.js",
-    "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply our-meals --remote",
+    "db:migrate:local": "wrangler d1 migrations apply our-meals --local",
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/*.test.js",
     "icons": "node scripts/icons.cjs",
-    "reset-password": "node --disable-warning=ExperimentalWarning scripts/reset-password.js"
+    "vendor": "node scripts/vendor.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
-    "express": "^5.3.0",
-    "mammoth": "^1.13.0"
+    "hono": "^4.13.18"
+  },
+  "devDependencies": {
+    "mammoth": "^1.13.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
+    "wrangler": "^4.162.0"
   }
 }

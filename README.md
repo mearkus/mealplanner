@@ -1,85 +1,78 @@
 # Our Meals 🍽
 
-A shared meal planner for two people (or a whole household). Everyone has their own login; together you're a **family** that shares recipes, plans and one Dropbox connection. You can:
+A shared meal planner for a family. Everyone signs in with their own Google account; together you're a **family** that shares recipes, plans and one Dropbox connection.
 
-- **Import your recipes** from Dropbox (or by uploading files, pasting text, or adding a web link)
-- **Plan the week**, and get a **shopping list built automatically**: quantities are added up across meals, sorted by store aisle, and shared live between your phones
+- **Import recipes** from your Dropbox folder: PDFs (with text inside), Word (.docx), web pages, text and Markdown. You can also upload files, paste a recipe, or add a web link.
+- **Plan the week**, and get a **shopping list built automatically**: quantities are added up across meals, sorted by store aisle, and ticks sync live between phones.
 - **Remember favourites**: ⭐ a recipe and tap ✅ when you cook it. The app shows favourites you *haven't had in a while*.
 - **Choose how healthy the week is**: every recipe gets a 1–5 healthiness rating (Indulgent → Very healthy), set automatically and easy to change. Suggestions follow the goal you pick (Light / Balanced / Comfort / Anything), and richer recipes come with "make it lighter" swap ideas.
 - **Batch meals with shared ingredients**: the plan shows which meals to *cook together* (with prep-once tips), suggests recipes that *use up* what you're already buying, and the shopping list marks items used in more than one meal ♻️.
 
-It's a small Node server with a phone-friendly web app. Add it to your home screen and it works like a regular app.
+It runs on **Cloudflare Workers' free plan** ($0), with a phone-friendly web app you add to your home screen.
 
-## Try it locally
+## How it's built
 
-Requires Node 22.13+.
+| Piece | Where it runs |
+|---|---|
+| Screens, shopping-list maths, batching, suggestions, health scores | Your phone's browser (`public/`, `public/lib/`) |
+| Reading recipe files (PDF via pdf.js, Word via mammoth) | Your phone, so there's no server cost and files never go to a third party |
+| Accounts, families, invites, data | Cloudflare Worker + D1 database (`worker/`, `migrations/`) |
+| Live updates between phones | A Durable Object per family (`worker/room.js`) |
+| Dropbox connection | Stored on the server per family; tokens are never sent to phones |
 
-```bash
-npm install
-npm start         # http://localhost:3000 → create your account and family
-npm run seed      # optional: 7 sample recipes (on an empty server this also creates demo@example.com / demo-password)
-```
+Keeping heavy work on the phone keeps every server request inside the free plan's 10 ms CPU limit.
+
+## Deploy to Cloudflare (one-time setup, ~15 minutes)
+
+You'll need: a Cloudflare account, this repo on GitHub, and a Google sign-in client ID.
+
+### 1. Google sign-in client ID
+1. Find your Cloudflare **workers.dev subdomain** (Cloudflare dashboard → Workers & Pages). The app will live at `https://our-meals.<subdomain>.workers.dev`.
+2. In [Google Cloud Console](https://console.cloud.google.com): create a project → **Google Auth Platform** → *Get started* (app name, your email, Audience: External).
+3. **Audience** → *Test users*: add the Gmail address of everyone who'll use the app. While the app is in "Testing", only these people can sign in, which is a nice extra lock.
+4. **Clients** → *Create client* → *Web application*. Under **Authorized JavaScript origins**, add `https://our-meals.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. The client ID isn't secret; ignore the client secret, this app doesn't use it.
+
+### 2. Cloudflare API token
+1. Cloudflare dashboard → *My Profile* → **API Tokens** → *Create Token* → start from the **Edit Cloudflare Workers** template and add the permission **Account → D1 → Edit**.
+2. Copy the token. Also copy your **Account ID** (Workers & Pages overview, right-hand side).
+
+### 3. GitHub
+In the repo: **Settings → Secrets and variables → Actions**:
+- *Secrets*: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- *Variables*: `GOOGLE_CLIENT_ID`
+
+Then push to `main` (or run **Actions → Deploy → Run workflow**). The workflow runs the tests, creates the D1 database on first run, applies migrations and deploys.
+
+### 4. First sign-in
+Open `https://our-meals.<subdomain>.workers.dev`, name your family and sign in with Google. The first person to sign in becomes the family owner. Then **More → Invite someone** and send your wife the link. Also add her Gmail as a Google test user (step 1.3).
 
 ## Accounts & families
-
-- **The first person** to open a fresh server creates an account and names the family (e.g. "The Smiths"). They become the family's *owner*.
-- **Invite others** with More → Family → *Invite someone*. This makes a link (valid 7 days, reusable until it expires or you cancel it) that you can text or share. Whoever opens it creates their own login and joins your family.
-- **Everything is shared within the family:** recipes, favourites, the plan, the shopping list (ticks sync live), cooking history and the Dropbox connection. The app shows who added a meal or item and who cooked what.
-- **Families are completely separate.** Nobody outside your family can see or change your data.
-- **Owners** can remove members. Anyone can rename the family, leave it, change their password, or log out on all devices. Changing your password logs you out everywhere else.
-- **Forgotten password?** There's no email reset. Whoever runs the server can run `npm run reset-password -- someone@example.com 'new-password'`.
-- **Who can sign up:** after the first family exists, new accounts need an invite link. To let other households start their own families on your server, set `ALLOW_NEW_FAMILIES=true`, or `FAMILY_SIGNUP_CODE=…` to require a code.
-
-## Put it online so you can both use it
-
-All data lives in one SQLite file, so any host with a persistent disk works. Once it's online, **open it and create your account right away**: the first person to sign up creates the family. Then invite your wife from More → Family.
-
-### Fly.io (about $0–2/month)
-
-```bash
-fly launch --copy-config --no-deploy    # pick a unique app name
-fly volumes create meals_data --size 1
-fly secrets set ANTHROPIC_API_KEY='sk-ant-…'   # optional
-fly deploy
-```
-
-Open `https://<your-app>.fly.dev`, create your account and family, then send your wife an invite link.
-
-### Other options
-- **Any Docker host** (Railway, Render with a disk, a home server or NAS): `docker build -t meals . && docker run -p 8080:8080 -v meals:/data meals`
-- **A computer at home** with `npm start`, shared through Tailscale (private and free).
+- Sign-in is **Google only**: no passwords to forget or reset.
+- **Invite links** (valid 7 days, cancel them any time) let others join your family. After the first family exists, nobody can create an account without an invite. To let other households start their own family on your server, set `ALLOW_NEW_FAMILIES` to `"true"` in `wrangler.jsonc`.
+- **Shared within a family:** recipes, favourites, the plan, shopping list, cooking history and the Dropbox connection. The app shows who added a meal or item and who cooked what.
+- **Families are completely separate.** Every query is scoped to your family (tests check this).
+- **Owners** can remove members. Anyone can rename the family, leave it, or sign out on all devices.
 
 ## Connecting Dropbox
+**More → Dropbox recipes**:
+1. Create a Dropbox app at <https://www.dropbox.com/developers/apps> → *Scoped access* → *Full Dropbox* (needed to read your existing shared recipe folder).
+2. **Permissions** tab → enable `files.content.read` → *Submit*.
+3. Paste the **App key**, click *Connect*, approve, and paste back the code Dropbox shows.
+4. Set the folder (e.g. `/Shared Recipes`) and press **Import new recipes**. Keep that screen open while it runs; running it again only picks up new files.
 
-Dropbox is connected **once per family**. Whoever connects it, everyone in the family can import from it, and the app shows who connected it. The access key is stored only on the server and never sent to anyone's phone or browser. Each family on the server has its own connection and folder.
+The person who connects Dropbox decides the folder. The server only lets the family read files **inside that folder**, never the rest of that person's Dropbox. Each recipe keeps a **📄 Original** button that opens the source file.
 
-In the app, go to **More → Dropbox recipes** and follow the three steps:
+**PDFs:** PDFs with real text inside (saved from websites, exported from Word, "Print → Save as PDF") are read on the phone, including two-column layouts and files holding several recipes. **Scanned PDFs** (photos of pages) have no text inside; they're listed as "couldn't be read" for now. Text recognition for them is the next step.
 
-1. Create a Dropbox app at <https://www.dropbox.com/developers/apps> → *Scoped access* → *Full Dropbox*.
-2. On the **Permissions** tab, enable `files.content.read` and click *Submit*.
-3. Paste the **App key** into the app, click *Connect*, approve access, and paste back the code Dropbox shows you.
-
-Then set the folder (default `/Recipes`) and press **Import new recipes**. Subfolders are included. Running it again only picks up new files.
-
-**File types read:** `.txt .md .rtf .html .docx .json` always. With `ANTHROPIC_API_KEY` set, also `.pdf .jpg .png .webp` (scans or photos of recipe cards). Claude also handles messy text better than the built-in parser and suggests a healthiness rating.
-
-**Alternative:** if Dropbox syncs to your computer, run `npm run import -- "~/Dropbox/Recipes" --email you@example.com` against the database (`--email` picks your family).
-
-## How the smart bits work
-
-| Feature | How |
-|---|---|
-| Shopping list | Ingredient lines are parsed into amount, unit and name. Synonyms are merged ("scallions" = "green onions"), units are converted (2 tbsp + 1 cup = 1⅛ cups), and amounts scale to the servings you plan. Staples (salt, oil, spices) go in a separate "check the pantry" list. Ticks sync between phones. |
-| Healthiness | A score built from ingredients (vegetables, legumes, fish and whole grains raise it; cream, processed meat, cheese and refined carbs lower it), or Claude's rating if enabled. You can always override it. |
-| Favourites you haven't had in a while | Favourites sorted by days since you last tapped ✅. |
-| Suggestions | Combines your health goal, how long since each favourite was cooked, how many ingredients it shares with the rest of the week, and skips anything cooked in the last 10 days. 🔀 Shuffle gives a new set. |
-| Batching | Groups planned meals that share perishable ingredients, so you can prep or buy once, and suggests extra recipes that need little extra shopping. |
-
-## Development
-
+## Local development
 ```bash
-npm run dev    # restarts on changes
-npm test
+npm install
+cp .dev.vars.example .dev.vars   # enables the local-only test sign-in
+npm run db:migrate:local
+npm run dev                      # http://localhost:8787
+npm run seed                     # in another terminal: 7 sample recipes for demo@example.com
+npm test                         # unit tests + the real Worker running locally
 ```
+The test sign-in only works when `DEV_LOGIN=true` **and** the request is to `localhost`, so it can't be enabled on the deployed site by accident.
 
-Code layout: `server/auth.js` + `server/db.js` (accounts, families, storage, all scoped per family), `server/ingredients.js` (parsing and units), `server/planner.js` (shopping list, batching, suggestions), `server/health.js`, `server/importer.js` + `server/dropbox.js` + `server/ai.js` (imports), `server/app.js` (API), `public/` (the app). **More → Download backup** exports everything as JSON.
+Code layout: `worker/index.js` (API), `worker/db.js` (D1 queries, all family-scoped), `worker/auth.js` (Google token verification, sessions), `worker/dropbox.js`, `worker/room.js` (live updates), `public/app.js` (the app), `public/lib/*` (planning logic and file reading, shared with tests).

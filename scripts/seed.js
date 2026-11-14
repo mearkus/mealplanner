@@ -1,8 +1,15 @@
-// Adds a few sample recipes so you can try the app before importing your own.
-import { openDb, saveRecipe, listRecipes, logCooked, createUser, createHousehold } from '../server/db.js';
-import { hashPassword } from '../server/auth.js';
-import { resolveFamily } from './family.js';
-
+// Adds sample recipes to a LOCAL dev server so you can try the app:  npm run dev  (in one terminal), then  npm run seed
+// Signs in with the local-only dev login as demo@example.com.
+const base = process.argv[2] || 'http://localhost:8787';
+let cookie = '';
+async function call(path, body) {
+  const res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined });
+  const set = res.headers.get('set-cookie'); if (set) cookie = set.split(';')[0];
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${path}: ${data.error || res.status}`);
+  return data;
+}
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const SAMPLES = [
   { title: 'Chicken Tinga Tacos', servings: 4, prepMinutes: 35, tags: ['mexican'], favorite: true, cooked: 40,
     ingredients: ['1.5 lb boneless skinless chicken thighs', '1 yellow onion, sliced', '3 cloves garlic, minced', '1 (14 oz) can crushed tomatoes', '2 chipotle peppers in adobo', '12 corn tortillas', '1 bunch cilantro', '2 limes', '1 avocado', 'Salt and pepper to taste'],
@@ -26,22 +33,9 @@ const SAMPLES = [
     ingredients: ['6 eggs', '2 cups spinach', '1/2 cup feta cheese', '1 cup cherry tomatoes', '1 tbsp butter'],
     instructions: '1. Wilt spinach in butter. 2. Add beaten eggs, cook gently, top with feta and tomatoes.' },
 ];
-
-openDb();
-let hid = resolveFamily(process.argv);
-if (!hid) {
-  // Fresh server: create a demo login so you can look around.
-  const uid = createUser({ email: 'demo@example.com', name: 'Demo', passwordHash: await hashPassword('demo-password') });
-  hid = createHousehold('Demo family', uid);
-  console.log('Created demo login: demo@example.com / demo-password');
+await call('/api/auth/dev', { email: 'demo@example.com', name: 'Demo', familyName: 'Demo family' });
+for (const { cooked, ...r } of SAMPLES) {
+  const { ids: [id] } = await call('/api/import', { recipes: [r], source: 'sample' });
+  if (cooked) await call(`/api/recipes/${id}/cooked`, { date: daysAgo(cooked) });
 }
-if (listRecipes(hid, { withIngredients: false }).length && !process.argv.includes('--force')) {
-  console.log('Recipes already exist; not seeding (use --force to add samples anyway).');
-  process.exit(0);
-}
-for (const s of SAMPLES) {
-  const { cooked, ...recipe } = s;
-  const id = saveRecipe(hid, { ...recipe, source: 'sample' });
-  if (cooked) logCooked(hid, id, { date: new Date(Date.now() - cooked * 86400000).toISOString().slice(0, 10) });
-}
-console.log(`Added ${SAMPLES.length} sample recipes.`);
+console.log(`Added ${SAMPLES.length} sample recipes. Sign in locally as demo@example.com (dev sign-in).`);

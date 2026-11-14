@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseIngredientLine } from '../server/ingredients.js';
-import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals } from '../server/planner.js';
-import { scoreHealth } from '../server/health.js';
+import { parseIngredientLine } from '../public/lib/ingredients.js';
+import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals } from '../public/lib/planner.js';
+import { scoreHealth } from '../public/lib/health.js';
 
 const mk = (id, title, lines, extra = {}) => ({ id, title, servings: 4, health: 3, favorite: false, lastCooked: null, ...extra, ingredients: lines.map(parseIngredientLine) });
 
