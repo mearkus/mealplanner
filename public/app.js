@@ -430,7 +430,8 @@ views.more = async () => {
           <li>Copy the <em>App key</em> from the Settings tab${dbx.appKeyFromEnv ? ' (already set on the server)' : ''}.</li>
         </ol>
         <form data-form="dropbox-start" class="row gap">${dbx.appKeyFromEnv ? '' : '<input name="appKey" placeholder="Dropbox app key" class="grow" required>'}<button class="primary">Connect Dropbox</button></form>
-        <form data-form="dropbox-finish" class="row gap" id="dropbox-code" hidden><input name="code" placeholder="Paste the code Dropbox shows you" class="grow" required><button class="primary">Finish</button></form>`}
+        ${sessionStorage.getItem('dropboxAwaitingCode') ? '<p class="small"><strong>Step 2:</strong> after you tap <em>Allow</em> in Dropbox, copy the code it shows and paste it here.</p>' : ''}
+        <form data-form="dropbox-finish" class="row gap" id="dropbox-code" ${sessionStorage.getItem('dropboxAwaitingCode') ? '' : 'hidden'}><input name="code" placeholder="Paste the code Dropbox shows you" class="grow" required><button class="primary">Finish</button></form>`}
       <p class="small muted">Reads PDFs (with text inside), Word (.docx), web pages, text and Markdown files on this phone. Scanned PDFs are listed separately for now.</p>
     </div>
 
@@ -658,10 +659,16 @@ const forms = {
   'dropbox-start': async (f) => {
     const { url } = await api('/dropbox/auth/start', { body: { appKey: f.appKey?.value } });
     window.open(url, '_blank', 'noopener');
+    // Remember we're waiting for the code: coming back from the Dropbox tab refreshes this screen.
+    sessionStorage.setItem('dropboxAwaitingCode', '1');
     document.getElementById('dropbox-code').hidden = false;
     toast('Approve access in Dropbox, then paste the code here', 5000);
   },
-  'dropbox-finish': async (f) => { await api('/dropbox/auth/finish', { body: { code: f.code.value } }); toast('Dropbox connected 🎉'); render(); },
+  'dropbox-finish': async (f) => {
+    await api('/dropbox/auth/finish', { body: { code: f.code.value } });
+    sessionStorage.removeItem('dropboxAwaitingCode');
+    toast('Dropbox connected 🎉'); render();
+  },
   'dropbox-folder': async (f) => { await api('/dropbox/folder', { body: { folder: f.folder.value } }); toast('Folder saved'); render(); },
   'import-url': async (f) => {
     toast('Fetching…');
