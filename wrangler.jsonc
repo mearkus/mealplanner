@@ -15,9 +15,8 @@
   "d1_databases": [
     {
       "binding": "DB",
+      // No database_id: the first deploy creates the D1 database automatically and later deploys reuse it.
       "database_name": "mealplanner",
-      // Filled in automatically by the GitHub deploy workflow (or: npx wrangler d1 create mealplanner)
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
@@ -25,11 +24,12 @@
     "bindings": [{ "name": "FAMILY_ROOM", "class_name": "FamilyRoom" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FamilyRoom"] }],
+  // Keep variables set in the Cloudflare dashboard (e.g. GOOGLE_CLIENT_ID) when deploying.
+  "keep_vars": true,
   "vars": {
-    // From Google Cloud Console → Google Auth Platform → Clients (safe to commit; it is public).
-    "GOOGLE_CLIENT_ID": "",
     // "true" lets anyone with a Google account start a new family (otherwise: first family + invites only).
     "ALLOW_NEW_FAMILIES": "false"
   }
+  // Set in the dashboard (Settings → Variables and Secrets): GOOGLE_CLIENT_ID.
   // Optional secret: SESSION_SECRET (otherwise one is generated and stored in D1 on first use).
 }

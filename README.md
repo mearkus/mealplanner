@@ -24,27 +24,23 @@ Keeping heavy work on the phone keeps every server request inside the free plan'
 
 ## Deploy to Cloudflare (one-time setup, ~15 minutes)
 
-You'll need: a Cloudflare account, this repo on GitHub, and a Google sign-in client ID.
+Deploys use Cloudflare's GitHub integration (**Workers Builds**): every push to the production branch builds and deploys automatically. GitHub Actions only runs the tests.
 
-### 1. Google sign-in client ID
-1. Find your Cloudflare **workers.dev subdomain** (Cloudflare dashboard → Workers & Pages). The app will live at `https://mealplanner.<subdomain>.workers.dev` (the worker name comes from `name` in `wrangler.jsonc`).
+### 1. Connect the repo (Workers Builds)
+Cloudflare dashboard → Workers & Pages → your worker (named `mealplanner`, matching `name` in `wrangler.jsonc`) → **Settings → Build**:
+- **Git repository:** this repo, with your production branch (e.g. `main`)
+- **Build command:** leave empty (`wrangler deploy` runs `scripts/vendor.js` itself)
+- **Deploy command:** `npm run deploy`. This deploys, then applies database migrations. The first deploy creates the D1 database automatically.
+
+### 2. Google sign-in client ID
+1. The app lives at `https://mealplanner.<subdomain>.workers.dev`.
 2. In [Google Cloud Console](https://console.cloud.google.com): create a project → **Google Auth Platform** → *Get started* (app name, your email, Audience: External).
-3. **Audience** → *Test users*: add the Gmail address of everyone who'll use the app. While the app is in "Testing", only these people can sign in, which is a nice extra lock.
-4. **Clients** → *Create client* → *Web application*. Under **Authorized JavaScript origins**, add `https://mealplanner.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. The client ID isn't secret; ignore the client secret, this app doesn't use it.
+3. **Audience** → *Test users*: add the Gmail address of everyone who'll use the app. While the app is in "Testing", only these people can sign in, which also means nobody else can claim your fresh deployment first.
+4. **Clients** → *Create client* → *Web application* → **Authorized JavaScript origins**: `https://mealplanner.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. It isn't secret; ignore the client secret.
+5. Cloudflare → your worker → **Settings → Variables and Secrets** → add a *Text* variable `GOOGLE_CLIENT_ID` with that value. Deploys keep it (`keep_vars`).
 
-### 2. Cloudflare API token
-1. Cloudflare dashboard → *My Profile* → **API Tokens** → *Create Token* → start from the **Edit Cloudflare Workers** template and add the permission **Account → D1 → Edit**.
-2. Copy the token. Also copy your **Account ID** (Workers & Pages overview, right-hand side).
-
-### 3. GitHub
-In the repo: **Settings → Secrets and variables → Actions**:
-- *Secrets*: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-- *Variables*: `GOOGLE_CLIENT_ID`
-
-Then push to `main` (or run **Actions → Deploy → Run workflow**). The workflow runs the tests, creates the D1 database on first run, applies migrations and deploys.
-
-### 4. First sign-in
-Open `https://mealplanner.<subdomain>.workers.dev`, name your family and sign in with Google. The first person to sign in becomes the family owner. Then **More → Invite someone** and send your wife the link. Also add her Gmail as a Google test user (step 1.3).
+### 3. First sign-in
+Open the app, name your family and sign in with Google; the first person becomes the family owner. Then **More → Invite someone** and send the link.
 
 ## Accounts & families
 - Sign-in is **Google only**: no passwords to forget or reset.
