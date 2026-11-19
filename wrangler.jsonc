@@ -24,12 +24,13 @@
     "bindings": [{ "name": "FAMILY_ROOM", "class_name": "FamilyRoom" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FamilyRoom"] }],
-  // Keep variables set in the Cloudflare dashboard (e.g. GOOGLE_CLIENT_ID) when deploying.
+  // Keep any extra variables set in the Cloudflare dashboard when deploying.
   "keep_vars": true,
   "vars": {
+    // Google sign-in (Google Auth Platform → Clients → "Our Meals" web client). Public by design, safe to commit.
+    "GOOGLE_CLIENT_ID": "573575343338-50m6qvqo2qg1fnr6f3gthkcaq7ie299b.apps.googleusercontent.com",
     // "true" lets anyone with a Google account start a new family (otherwise: first family + invites only).
     "ALLOW_NEW_FAMILIES": "false"
   }
-  // Set in the dashboard (Settings → Variables and Secrets): GOOGLE_CLIENT_ID.
   // Optional secret: SESSION_SECRET (otherwise one is generated and stored in D1 on first use).
 }
