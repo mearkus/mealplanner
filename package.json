@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy && wrangler d1 migrations apply mealplanner --remote",
+    "deploy": "wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply mealplanner --remote",
     "db:migrate:local": "wrangler d1 migrations apply mealplanner --local",
     "seed": "node scripts/seed.js",

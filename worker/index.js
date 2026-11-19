@@ -6,6 +6,7 @@ import * as db from './db.js';
 import * as auth from './auth.js';
 import * as dropbox from './dropbox.js';
 import { HttpError } from './db.js';
+import { ensureMigrated } from './migrate.js';
 
 export { FamilyRoom } from './room.js';
 
@@ -18,6 +19,9 @@ app.onError((err, c) => {
   if (!(err instanceof HttpError)) console.error(err);
   return c.json({ error: err.message || 'Something went wrong', ...(err.code ? { code: err.code } : {}) }, err.status || 500);
 });
+
+// Make sure the database tables exist / are up to date before anything touches them.
+app.use('/api/*', async (c, next) => { await ensureMigrated(c.env.DB); await next(); });
 
 // ---------- session helpers ----------
 // The cookie-signing secret: SESSION_SECRET if set, otherwise generated once and kept in the database.
