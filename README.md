@@ -30,7 +30,7 @@ Deploys use Cloudflare's GitHub integration (**Workers Builds**): every push to 
 Cloudflare dashboard → Workers & Pages → your worker (named `mealplanner`, matching `name` in `wrangler.jsonc`) → **Settings → Build**:
 - **Git repository:** this repo, with your production branch (e.g. `main`)
 - **Build command:** leave empty (`wrangler deploy` runs `scripts/vendor.js` itself)
-- **Deploy command:** `npm run deploy`. This deploys, then applies database migrations. The first deploy creates the D1 database automatically.
+- **Deploy command:** the default `npx wrangler deploy` is all it needs. The first deploy creates the D1 database automatically, and the Worker creates or updates its own tables on first use (`worker/migrate.js`).
 
 ### 2. Google sign-in client ID
 1. The app lives at `https://mealplanner.<subdomain>.workers.dev`.
@@ -64,7 +64,6 @@ The person who connects Dropbox decides the folder. The server only lets the fam
 ```bash
 npm install
 cp .dev.vars.example .dev.vars   # enables the local-only test sign-in
-npm run db:migrate:local
 npm run dev                      # http://localhost:8787
 npm run seed                     # in another terminal: 7 sample recipes for demo@example.com
 npm test                         # unit tests + the real Worker running locally

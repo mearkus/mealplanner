@@ -1,7 +1,7 @@
 // Runs the real Worker locally (wrangler dev + local D1 + Durable Object) and exercises the API like two phones would.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +10,7 @@ const PORT = 8799;
 const base = `http://localhost:${PORT}`;
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'meals-wr-'));
 const wrangler = path.resolve('node_modules/.bin/wrangler');
-execFileSync(wrangler, ['d1', 'migrations', 'apply', 'mealplanner', '--local', '--persist-to', persist], { stdio: 'ignore' });
+// No manual migration step: the Worker creates its own tables on first request (worker/migrate.js).
 const server = spawn(wrangler, ['dev', '--local', '--port', String(PORT), '--persist-to', persist,
   '--var', 'DEV_LOGIN:true', '--var', 'GOOGLE_CLIENT_ID:test.apps.googleusercontent.com'],
 { stdio: 'ignore', detached: true });

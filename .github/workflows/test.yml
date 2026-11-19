@@ -1,5 +1,5 @@
 # Runs the tests on every push and pull request. Deploys are done by Cloudflare's GitHub integration
-# (Workers Builds) using the deploy command `npm run deploy`.
+# (Workers Builds) with the default deploy command `npx wrangler deploy`.
 name: Test
 
 on:
