@@ -2,9 +2,9 @@
 // The pure functions here are shared with the Node tests; the loaders at the bottom use browser builds.
 import { parseRecipeText } from './parser.js';
 
-export const SUPPORTED = ['.pdf', '.txt', '.md', '.markdown', '.text', '.rtf', '.html', '.htm', '.docx', '.json'];
-export const extOf = (name) => (String(name).match(/\.[^./]+$/)?.[0] || '').toLowerCase();
-export const isSupported = (name) => SUPPORTED.includes(extOf(name));
+import { SUPPORTED, extOf, isSupported } from './filetypes.js';
+
+export { SUPPORTED, extOf, isSupported };
 
 // ---------- HTML ----------
 export function htmlToText(html) {

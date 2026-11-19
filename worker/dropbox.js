@@ -140,3 +140,26 @@ export async function download(env, hid, path) {
   if (!res.ok) throw new HttpError(502, `Download failed (${res.status})`);
   return res;
 }
+
+/**
+ * One level of the connector's Dropbox, for the folder picker: subfolders plus a count of recipe files here.
+ * Only the person who connected Dropbox may call this (enforced by the route): it reveals their folder names.
+ */
+export async function browse(env, hid, path, isSupported) {
+  let p = String(path || '').trim().replace(/\/+$/, '');
+  if (p && !p.startsWith('/')) p = `/${p}`;
+  if (p.includes('/../') || p.endsWith('/..')) throw new HttpError(400, 'Bad folder path');
+  const entries = [];
+  let page = await rpc(env, hid, '/2/files/list_folder', { path: p, recursive: false, limit: 2000 });
+  entries.push(...page.entries);
+  for (let i = 0; page.has_more && i < 10; i++) {
+    page = await rpc(env, hid, '/2/files/list_folder/continue', { cursor: page.cursor });
+    entries.push(...page.entries);
+  }
+  const folders = entries.filter((e) => e['.tag'] === 'folder')
+    .map((e) => ({ name: e.name, path: e.path_display }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const files = entries.filter((e) => e['.tag'] === 'file');
+  const display = p ? (entries[0]?.path_display?.split('/').slice(0, -1).join('/') || p) : '';
+  return { path: display, parent: p ? p.split('/').slice(0, -1).join('/') : null, folders, recipeFiles: files.filter((f) => isSupported(f.name)).length, otherFiles: files.filter((f) => !isSupported(f.name)).length };
+}
