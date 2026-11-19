@@ -27,10 +27,10 @@ Keeping heavy work on the phone keeps every server request inside the free plan'
 You'll need: a Cloudflare account, this repo on GitHub, and a Google sign-in client ID.
 
 ### 1. Google sign-in client ID
-1. Find your Cloudflare **workers.dev subdomain** (Cloudflare dashboard → Workers & Pages). The app will live at `https://our-meals.<subdomain>.workers.dev`.
+1. Find your Cloudflare **workers.dev subdomain** (Cloudflare dashboard → Workers & Pages). The app will live at `https://mealplanner.<subdomain>.workers.dev` (the worker name comes from `name` in `wrangler.jsonc`).
 2. In [Google Cloud Console](https://console.cloud.google.com): create a project → **Google Auth Platform** → *Get started* (app name, your email, Audience: External).
 3. **Audience** → *Test users*: add the Gmail address of everyone who'll use the app. While the app is in "Testing", only these people can sign in, which is a nice extra lock.
-4. **Clients** → *Create client* → *Web application*. Under **Authorized JavaScript origins**, add `https://our-meals.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. The client ID isn't secret; ignore the client secret, this app doesn't use it.
+4. **Clients** → *Create client* → *Web application*. Under **Authorized JavaScript origins**, add `https://mealplanner.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. The client ID isn't secret; ignore the client secret, this app doesn't use it.
 
 ### 2. Cloudflare API token
 1. Cloudflare dashboard → *My Profile* → **API Tokens** → *Create Token* → start from the **Edit Cloudflare Workers** template and add the permission **Account → D1 → Edit**.
@@ -44,7 +44,7 @@ In the repo: **Settings → Secrets and variables → Actions**:
 Then push to `main` (or run **Actions → Deploy → Run workflow**). The workflow runs the tests, creates the D1 database on first run, applies migrations and deploys.
 
 ### 4. First sign-in
-Open `https://our-meals.<subdomain>.workers.dev`, name your family and sign in with Google. The first person to sign in becomes the family owner. Then **More → Invite someone** and send your wife the link. Also add her Gmail as a Google test user (step 1.3).
+Open `https://mealplanner.<subdomain>.workers.dev`, name your family and sign in with Google. The first person to sign in becomes the family owner. Then **More → Invite someone** and send your wife the link. Also add her Gmail as a Google test user (step 1.3).
 
 ## Accounts & families
 - Sign-in is **Google only**: no passwords to forget or reset.

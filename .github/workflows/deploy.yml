@@ -28,16 +28,16 @@ jobs:
       - name: Find or create the D1 database
         run: |
           set -euo pipefail
-          id=$(npx wrangler d1 list --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const db=JSON.parse(d).find(x=>x.name==='our-meals');process.stdout.write(db?db.uuid:'')})")
+          id=$(npx wrangler d1 list --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const db=JSON.parse(d).find(x=>x.name==='mealplanner');process.stdout.write(db?db.uuid:'')})")
           if [ -z "$id" ]; then
-            npx wrangler d1 create our-meals
-            id=$(npx wrangler d1 list --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).find(x=>x.name==='our-meals').uuid))")
+            npx wrangler d1 create mealplanner
+            id=$(npx wrangler d1 list --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).find(x=>x.name==='mealplanner').uuid))")
           fi
           sed -i "s/00000000-0000-0000-0000-000000000000/$id/" wrangler.jsonc
           echo "Using D1 database $id"
 
       - name: Apply database migrations
-        run: npx wrangler d1 migrations apply our-meals --remote
+        run: npx wrangler d1 migrations apply mealplanner --remote
 
       - name: Deploy
         run: |

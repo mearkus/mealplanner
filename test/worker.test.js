@@ -10,7 +10,7 @@ const PORT = 8799;
 const base = `http://localhost:${PORT}`;
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'meals-wr-'));
 const wrangler = path.resolve('node_modules/.bin/wrangler');
-execFileSync(wrangler, ['d1', 'migrations', 'apply', 'our-meals', '--local', '--persist-to', persist], { stdio: 'ignore' });
+execFileSync(wrangler, ['d1', 'migrations', 'apply', 'mealplanner', '--local', '--persist-to', persist], { stdio: 'ignore' });
 const server = spawn(wrangler, ['dev', '--local', '--port', String(PORT), '--persist-to', persist,
   '--var', 'DEV_LOGIN:true', '--var', 'GOOGLE_CLIENT_ID:test.apps.googleusercontent.com'],
 { stdio: 'ignore', detached: true });

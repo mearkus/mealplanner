@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply our-meals --remote",
-    "db:migrate:local": "wrangler d1 migrations apply our-meals --local",
+    "db:migrate": "wrangler d1 migrations apply mealplanner --remote",
+    "db:migrate:local": "wrangler d1 migrations apply mealplanner --local",
     "seed": "node scripts/seed.js",
     "test": "node --test test/*.test.js",
     "icons": "node scripts/icons.cjs",

@@ -1,8 +1,9 @@
 {
   // Cloudflare Workers config. See README → "Deploy to Cloudflare".
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "our-meals",
+  "name": "mealplanner",
   "main": "worker/index.js",
+  "workers_dev": true,
   "compatibility_date": "2026-11-01",
   "build": { "command": "node scripts/vendor.js" },
   "assets": {
@@ -14,8 +15,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "our-meals",
-      // Replace with the id printed by: npx wrangler d1 create our-meals
+      "database_name": "mealplanner",
+      // Filled in automatically by the GitHub deploy workflow (or: npx wrangler d1 create mealplanner)
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
