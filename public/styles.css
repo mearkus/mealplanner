@@ -123,3 +123,7 @@ ol.steps { padding-left: 22px; }
 .invite { margin-top: 10px; padding: 10px; background: var(--bg); border-radius: 10px; }
 .invite input { margin: 6px 0; font-size: .85rem; }
 details form { margin-top: 10px; }
+.browser { margin-top: 10px; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
+.browser .list.compact .item { padding: 0; }
+.browser .item button.link { justify-content: flex-start; text-align: left; width: 100%; color: var(--ink); padding: 10px 4px; }
+.browser > .primary { width: 100%; margin-top: 8px; }

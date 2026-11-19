@@ -7,6 +7,7 @@ import * as auth from './auth.js';
 import * as dropbox from './dropbox.js';
 import { HttpError } from './db.js';
 import { ensureMigrated } from './migrate.js';
+import { isSupported } from '../public/lib/filetypes.js';
 
 export { FamilyRoom } from './room.js';
 
@@ -260,6 +261,13 @@ app.post('/api/dropbox/auth/finish', async (c) => {
 app.post('/api/dropbox/folder', async (c) => {
   await dropbox.setFolder(c.env, c.get('hid'), c.get('user'), (await body(c)).folder);
   return c.json(await dropbox.status(c.env, c.get('hid')));
+});
+/** Folder picker: only the person whose Dropbox is connected can browse it (it reveals their folder names). */
+app.get('/api/dropbox/folders', async (c) => {
+  const st = await dropbox.status(c.env, c.get('hid'));
+  if (!st.connected) throw new HttpError(400, 'Dropbox is not connected for this family');
+  if (st.connectedBy?.id !== c.get('user').id) throw new HttpError(403, 'Only the person who connected Dropbox can browse its folders');
+  return c.json(await dropbox.browse(c.env, c.get('hid'), c.req.query('path') || '', isSupported));
 });
 app.post('/api/dropbox/disconnect', async (c) => {
   await dropbox.assertCanManage(c.env, c.get('hid'), c.get('user'));

@@ -414,7 +414,9 @@ views.more = async () => {
       ${dbx.connected ? `
         <p>Connected${dbx.account ? ` to <strong>${esc(dbx.account)}</strong>'s Dropbox` : ''}${dbx.connectedBy ? ` by ${esc(dbx.connectedBy.name)}` : ''} — shared with everyone in ${esc(fam.name)}.</p>
         ${iConnected ? `<form class="row gap" data-form="dropbox-folder"><input name="folder" value="${esc(dbx.folder)}" placeholder="/Recipes" class="grow" aria-label="Dropbox folder"><button>Save folder</button></form>
-          <p class="small muted">Only files inside this folder can be read by your family.</p>`
+          <div class="row gap"><button type="button" data-action="browse-open">📁 Browse folders…</button></div>
+          <div id="folder-browser"></div>
+          <p class="small muted">Only files inside this folder (and its subfolders) can be read by your family.</p>`
           : `<p class="small">Folder: <code>${esc(dbx.folder || '/')}</code> <span class="muted">(only ${esc(dbx.connectedBy?.name || 'the person who connected it')} can change it)</span></p>`}
         <div class="row gap wrap">
           <button class="primary" data-action="dropbox-import" ${S.importing ? 'disabled' : ''}>⬇️ Import new recipes</button>
@@ -539,9 +541,42 @@ async function importFiles(fileList) {
   document.getElementById('upload').value = '';
 }
 
+// ---------- Dropbox folder browser (only for the person who connected Dropbox) ----------
+async function loadBrowse(path) {
+  const box = document.getElementById('folder-browser');
+  if (!box) return;
+  box.innerHTML = '<p class="small muted">Loading folders…</p>';
+  let data; let note = '';
+  try { data = await api(`/dropbox/folders?path=${encodeURIComponent(path || '')}`); } catch (err) {
+    if (!/not found/i.test(err.message) || !path) throw err;
+    data = await api('/dropbox/folders?path='); note = `<p class="small danger">"${esc(path)}" wasn't found, so here's the top of your Dropbox.</p>`;
+  }
+  const here = data.path || '';
+  box.innerHTML = `
+    <div class="browser">
+      <div class="row between"><strong class="grow">📁 ${esc(here || 'Your Dropbox (top level)')}</strong><button type="button" class="icon small" data-action="browse-close" title="Close">✕</button></div>
+      ${note}
+      ${data.parent != null ? `<button type="button" class="link" data-action="browse-into" data-path="${esc(data.parent)}">⬆ Up to ${esc(data.parent || 'top level')}</button>` : ''}
+      ${data.folders.length ? `<ul class="list compact">${data.folders.map((f) => `
+        <li class="item"><button type="button" class="link grow left" data-action="browse-into" data-path="${esc(f.path)}">📁 ${esc(f.name)}</button></li>`).join('')}</ul>`
+        : '<p class="small muted">No subfolders here.</p>'}
+      <p class="small">${data.recipeFiles} recipe file${data.recipeFiles === 1 ? '' : 's'} directly in this folder${data.otherFiles ? ` (plus ${data.otherFiles} other file${data.otherFiles === 1 ? '' : 's'})` : ''}. Subfolders are included when importing.</p>
+      <button type="button" class="primary" data-action="browse-use" data-path="${esc(here)}">Use this folder</button>
+    </div>`;
+}
+
 // ---------- actions ----------
 const live = async (p) => { await applyLive(await p); };
 const actions = {
+  'browse-open': () => loadBrowse(document.querySelector('[data-form="dropbox-folder"] input[name=folder]')?.value || S.dropbox?.folder || ''),
+  'browse-into': (el) => loadBrowse(el.dataset.path),
+  'browse-close': () => { document.getElementById('folder-browser').innerHTML = ''; },
+  'browse-use': async (el) => {
+    const folder = el.dataset.path;
+    if (!folder && !confirm('Use your entire Dropbox? Your family would be able to read every file in it. A recipe folder is usually better.')) return;
+    await api('/dropbox/folder', { body: { folder } });
+    toast(`Folder set to ${folder || 'your whole Dropbox'}`); render();
+  },
   'plan-add': async (el) => { await live(api('/plan', { body: { recipeId: Number(el.dataset.recipe) } })); toast('Added to this week ✓'); if (state('plan')) render(); },
   'plan-remove': async (el) => { await live(api(`/plan/${el.dataset.id}`, { method: 'DELETE' })); render(); },
   'plan-cooked': async (el) => { await live(api(`/plan/${el.dataset.id}/cooked`, { body: {} })); toast('Nice! Logged as cooked 🍽'); render(); },

@@ -1,7 +1,7 @@
 // Runs the real Worker locally (wrangler dev + local D1 + Durable Object) and exercises the API like two phones would.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,6 +106,25 @@ test('Dropbox status never exposes secrets; download refuses paths outside the f
   assert.ok(!/token|refresh|pkce/i.test(JSON.stringify(s)));
   await mark('/api/dropbox/auth/start', { appKey: 'abc123' });
   assert.ok(!JSON.stringify((await sam('/api/state')).body).includes('abc123'));
+});
+
+test('folder browser: only the person who connected Dropbox can browse it', async () => {
+  const neighbourless = client();
+  assert.equal((await sam('/api/dropbox/folders')).status, 400); // not connected yet
+  const { user, family } = (await mark('/api/me')).body;
+  // Pretend Mark connected Dropbox (a real connection needs Dropbox's servers).
+  const sql = `INSERT OR REPLACE INTO household_settings (household_id, key, value) VALUES
+    (${family.id}, 'dropbox_token', '{"refresh_token":"fake"}'), (${family.id}, 'dropbox_connected_by', '${user.id}')`;
+  execFileSync(wrangler, ['d1', 'execute', 'mealplanner', '--local', '--persist-to', persist, '--command', sql], { stdio: 'ignore' });
+  const forSam = await sam('/api/dropbox/folders?path=/');
+  assert.equal(forSam.status, 403);
+  assert.match(forSam.body.error, /Only the person who connected Dropbox/);
+  const forMark = await mark('/api/dropbox/folders?path=/');
+  assert.notEqual(forMark.status, 403); // allowed through (then fails talking to Dropbox with the fake token)
+  assert.equal((await neighbourless('/api/dropbox/folders')).status, 401);
+  // Undo the fake connection so later tests start clean.
+  execFileSync(wrangler, ['d1', 'execute', 'mealplanner', '--local', '--persist-to', persist, '--command',
+    `DELETE FROM household_settings WHERE household_id = ${family.id} AND key IN ('dropbox_token', 'dropbox_connected_by')`], { stdio: 'ignore' });
 });
 
 test('live updates: the other phone hears about changes', async () => {
