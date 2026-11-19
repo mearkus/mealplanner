@@ -37,7 +37,7 @@ Cloudflare dashboard → Workers & Pages → your worker (named `mealplanner`, m
 2. In [Google Cloud Console](https://console.cloud.google.com): create a project → **Google Auth Platform** → *Get started* (app name, your email, Audience: External).
 3. **Audience** → *Test users*: add the Gmail address of everyone who'll use the app. While the app is in "Testing", only these people can sign in, which also means nobody else can claim your fresh deployment first.
 4. **Clients** → *Create client* → *Web application* → **Authorized JavaScript origins**: `https://mealplanner.<subdomain>.workers.dev` (and `http://localhost:8787` for local testing). Copy the **Client ID**. It isn't secret; ignore the client secret.
-5. Cloudflare → your worker → **Settings → Variables and Secrets** → add a *Text* variable `GOOGLE_CLIENT_ID` with that value. Deploys keep it (`keep_vars`).
+5. Put it in `wrangler.jsonc` under `vars.GOOGLE_CLIENT_ID` (or add it as a *Text* variable in Cloudflare → your worker → **Settings → Variables and Secrets**).
 
 ### 3. First sign-in
 Open the app, name your family and sign in with Google; the first person becomes the family owner. Then **More → Invite someone** and send the link.
