@@ -13,6 +13,14 @@ A shared meal planner for a family. Everyone signs in with their own Google acco
 
 It runs on **Cloudflare Workers' free plan** ($0), as a phone-friendly website and as **Android and iOS apps** (see below).
 
+## Get the app
+
+- **Android:** [⬇️ Download OurMeals-debug.apk](https://github.com/mearkus/mealplanner/releases/download/latest-build/OurMeals-debug.apk). Open this link on your phone, then open the downloaded file and allow "install unknown apps" when asked. Always the newest build of `main`; install newer versions over the old one.
+- **iPhone / iPad:** use the website and *Add to Home Screen* for now. A real iOS app needs an Apple Developer account and TestFlight. For a Mac's iOS Simulator: [OurMeals-simulator.zip](https://github.com/mearkus/mealplanner/releases/download/latest-build/OurMeals-simulator.zip).
+- **Website:** [mealplanner.mark-greshammer.workers.dev](https://mealplanner.mark-greshammer.workers.dev) works in any browser; add it to your home screen to use it like an app.
+
+All builds: [Latest build release](https://github.com/mearkus/mealplanner/releases/tag/latest-build).
+
 ## How it's built
 
 | Piece | Where it runs |
@@ -55,7 +63,7 @@ The apps wrap the same web app with [Capacitor](https://capacitorjs.com) (same s
 - `public/lib/native.js`: native extras (sign-in token in device storage, opening links in the browser, the Android back button, status bar and splash). All of them do nothing on the website.
 
 **Builds:** GitHub Actions builds both apps on every push (`.github/workflows/android.yml`, `ios.yml`). Each push to `main` also updates the **Latest build** pre-release on the repository's Releases page:
-- `OurMeals-debug.apk`: open it on an Android phone to install (allow "install unknown apps"). Newer builds install over older ones because every build is signed with the same debug key (`android/app/ourmeals-debug.keystore`; debug keys can't be used for Play Store releases).
+- [`OurMeals-debug.apk`](https://github.com/mearkus/mealplanner/releases/download/latest-build/OurMeals-debug.apk): open it on an Android phone to install (allow "install unknown apps"). Newer builds install over older ones because every build is signed with the same debug key (`android/app/ourmeals-debug.keystore`; debug keys can't be used for Play Store releases).
 - `OurMeals-simulator.zip`: an unsigned build for the iOS Simulator. Installing on a real iPhone needs an Apple Developer account ($99/year) and TestFlight.
 
 Builds from other branches are attached to their workflow run instead (the run's Summary page → Artifacts).
