@@ -12,7 +12,7 @@ const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'meals-wr-'));
 const wrangler = path.resolve('node_modules/.bin/wrangler');
 // No manual migration step: the Worker creates its own tables on first request (worker/migrate.js).
 const server = spawn(wrangler, ['dev', '--local', '--port', String(PORT), '--persist-to', persist,
-  '--var', 'DEV_LOGIN:true', '--var', 'GOOGLE_CLIENT_ID:test.apps.googleusercontent.com'],
+  '--var', 'DEV_LOGIN:true', '--var', 'GOOGLE_CLIENT_ID:test.apps.googleusercontent.com', '--var', 'GOOGLE_CLIENT_SECRET:test-secret'],
 { stdio: 'ignore', detached: true });
 for (let i = 0; i < 60; i++) {
   try { if ((await fetch(`${base}/api/session`)).ok) break; } catch { /* starting */ }
@@ -155,6 +155,71 @@ test('live updates: the other phone hears about changes', async () => {
   const msg = await Promise.race([got, new Promise((_, rej) => setTimeout(() => rej(new Error('no message')), 5000))]);
   assert.equal(msg.type, 'changed');
   ws.close();
+});
+
+test('apps: cross-origin requests are allowed only from the app origins', async () => {
+  for (const origin of ['capacitor://localhost', 'https://localhost']) {
+    const pre = await fetch(`${base}/api/state`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
+    assert.equal(pre.status, 204);
+    assert.equal(pre.headers.get('access-control-allow-origin'), origin);
+    assert.match(pre.headers.get('access-control-allow-headers'), /Authorization/);
+    const err = await fetch(`${base}/api/state`, { headers: { Origin: origin } }); // errors carry the headers too
+    assert.equal(err.status, 401);
+    assert.equal(err.headers.get('access-control-allow-origin'), origin);
+  }
+  const evil = await fetch(`${base}/api/state`, { headers: { Origin: 'https://evil.example' } });
+  assert.equal(evil.headers.get('access-control-allow-origin'), null);
+  assert.equal(evil.headers.get('access-control-allow-credentials'), null);
+});
+
+test('apps: bearer token sign-in works for the API and live updates', async () => {
+  const r = await fetch(`${base}/api/auth/dev`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://localhost' }, body: JSON.stringify({ email: 'mark@example.com', name: 'Mark', app: true }) });
+  const me = await r.json();
+  assert.ok(me.token);
+  assert.equal(r.headers.get('set-cookie'), null); // apps get a token, not a cookie
+  const st = await fetch(`${base}/api/state`, { headers: { Authorization: `Bearer ${me.token}`, Origin: 'https://localhost' } });
+  assert.equal(st.status, 200);
+  assert.ok((await st.json()).recipes.length >= 1);
+  assert.equal((await fetch(`${base}/api/state`, { headers: { Authorization: 'Bearer nope.nope' } })).status, 401);
+  const ws = new WebSocket(`ws://localhost:${PORT}/api/live?access_token=${encodeURIComponent(me.token)}`);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+  ws.close();
+  // ?access_token only counts for the WebSocket
+  assert.equal((await fetch(`${base}/api/state?access_token=${encodeURIComponent(me.token)}`)).status, 401);
+});
+
+test('apps: browser sign-in hand-off (start → Google → callback → one-time code exchange)', async () => {
+  const start = await fetch(`${base}/api/auth/google/start?challenge=${'a'.repeat(43)}&invite=ABCDE-FGHJK`, { redirect: 'manual' });
+  assert.equal(start.status, 302);
+  const loc = new URL(start.headers.get('location'));
+  assert.equal(loc.origin + loc.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(loc.searchParams.get('client_id'), 'test.apps.googleusercontent.com');
+  assert.equal(loc.searchParams.get('redirect_uri'), `${base}/api/auth/google/callback`);
+  assert.ok(loc.searchParams.get('state').length >= 40);
+  assert.equal((await fetch(`${base}/api/auth/google/start?challenge=short`, { redirect: 'manual' })).status, 400);
+  // Unknown / replayed state is refused; a cancelled sign-in goes back to the app.
+  assert.equal((await fetch(`${base}/api/auth/google/callback?state=nope&code=x`, { redirect: 'manual' })).status, 400);
+  const cancelled = await fetch(`${base}/api/auth/google/callback?state=${loc.searchParams.get('state')}&error=access_denied`, { redirect: 'manual' });
+  assert.equal(cancelled.headers.get('location'), 'ourmeals://auth?error=cancelled');
+
+  // Exchange: simulate a finished sign-in (Google itself can't be reached from tests).
+  const markId = (await mark('/api/me')).body.user.id;
+  const verifier = 'v'.repeat(43);
+  const { createHash } = await import('node:crypto');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const insert = (id, code) => execFileSync(wrangler, ['d1', 'execute', 'mealplanner', '--local', '--persist-to', persist, '--command',
+    `INSERT INTO auth_requests (id, challenge, app_code, user_id) VALUES ('${id}', '${challenge}', '${code}', ${markId})`], { stdio: 'ignore' });
+  const exchange = (code, v) => fetch(`${base}/api/auth/app/exchange`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, verifier: v }) });
+  insert('req1', 'code1');
+  assert.equal((await exchange('code1', 'wrong'.repeat(9))).status, 400);
+  assert.equal((await exchange('code1', verifier)).status, 400); // one try only: a wrong guess burns the code
+  insert('req2', 'code2');
+  const ok = await exchange('code2', verifier);
+  assert.equal(ok.status, 200);
+  const me = await ok.json();
+  assert.equal(me.user.name, 'Mark');
+  assert.equal((await fetch(`${base}/api/me`, { headers: { Authorization: `Bearer ${me.token}` } })).status, 200);
+  assert.equal((await exchange('code2', verifier)).status, 400); // codes can't be reused
 });
 
 test('owner removes a member (their session stops working); signing out everywhere revokes sessions', async () => {

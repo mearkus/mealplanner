@@ -1,0 +1,25 @@
+{
+  "appId": "com.ourmeals.app",
+  "appName": "Our Meals",
+  "webDir": "public",
+  "backgroundColor": "#f6f4ef",
+  "android": {
+    "backgroundColor": "#f6f4ef"
+  },
+  "ios": {
+    "backgroundColor": "#f6f4ef",
+    "contentInset": "never"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#2f6b4f",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "LIGHT",
+      "backgroundColor": "#f6f4ef",
+      "overlaysWebView": false
+    }
+  }
+}
