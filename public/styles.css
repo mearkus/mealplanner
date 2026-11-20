@@ -143,3 +143,7 @@ button.link.small { min-height: 0; padding: 0 2px; font-size: inherit; }
 .filter-selects select { flex: 1; min-width: 0; width: 100%; }
 .result-count { margin: 6px 4px 0; }
 main { overflow-x: clip; }
+/* "Continue with Google" in the Android/iOS apps (sign-in runs in the phone's browser) */
+.gsi-native { width: 280px; max-width: 100%; border-radius: 99px; background: #fff; color: #1f1f1f; border: 1px solid #dadce0; font-weight: 600; gap: 10px; }
+.gsi-native .g { font: 700 1.15rem/1 Arial, sans-serif; background: conic-gradient(from -45deg, #ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html.native .topbar { padding-top: calc(env(safe-area-inset-top) + 6px); }

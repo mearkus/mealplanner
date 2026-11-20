@@ -15,12 +15,26 @@
     "seed": "node scripts/seed.js",
     "test": "node --test test/*.test.js",
     "icons": "node scripts/icons.cjs",
-    "vendor": "node scripts/vendor.js"
+    "vendor": "node scripts/vendor.js",
+    "cap:sync": "node scripts/vendor.js && cap sync",
+    "cap:android": "node scripts/vendor.js && cap sync android && cap open android",
+    "cap:ios": "node scripts/vendor.js && cap sync ios && cap open ios",
+    "app-assets": "node scripts/app-assets.cjs && capacitor-assets generate --android --ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "hono": "^4.13.18"
   },
   "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.2",
     "mammoth": "^1.13.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",

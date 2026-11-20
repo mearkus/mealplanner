@@ -163,3 +163,11 @@ export async function browse(env, hid, path, isSupported) {
   const display = p ? (entries[0]?.path_display?.split('/').slice(0, -1).join('/') || p) : '';
   return { path: display, parent: p ? p.split('/').slice(0, -1).join('/') : null, folders, recipeFiles: files.filter((f) => isSupported(f.name)).length, otherFiles: files.filter((f) => !isSupported(f.name)).length };
 }
+
+/** A short-lived (4 hour) direct link to a file in the recipe folder, for "📄 Original" (works in the apps too). */
+export async function temporaryLink(env, hid, path) {
+  const { folder } = await status(env, hid);
+  if (!insideFolder(folder, path)) throw new HttpError(403, 'That file is outside the family recipe folder');
+  const res = await rpc(env, hid, '/2/files/get_temporary_link', { path });
+  return res.link;
+}

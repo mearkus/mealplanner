@@ -3,6 +3,8 @@
 import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals, suggestSides, sharedIngredients } from './lib/planner.js';
 import { effectiveMeta, currentSeason, fitsSeason, fitsOccasion, COURSES, COURSE_LABELS, SEASONS, SEASON_LABELS, OCCASIONS, OCCASION_LABELS } from './lib/classify.js';
 import { lighterTips, scoreHealth } from './lib/health.js';
+import { isNative, platform, SERVER, wsBase, shareBase, loadToken, getToken, setToken, openExternal, browserSignIn, listenForAuthLinks, setupChrome, onBackButton, onResume, exitApp } from './lib/native.js';
+import { APP_VERSION } from './lib/config.js';
 import { fileToRecipes, browserLibs, textToRecipes, recipesFromJsonLd, htmlToText, isSupported, SUPPORTED } from './lib/extract.js';
 
 const $view = document.getElementById('view');
@@ -39,7 +41,10 @@ function toast(msg, ms = 2500) {
 async function api(path, opts = {}) {
   const init = { method: opts.method || (opts.body !== undefined ? 'POST' : 'GET'), headers: {} };
   if (opts.body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
-  const res = await fetch(`/api${path}`, init);
+  if (getToken()) init.headers.Authorization = `Bearer ${getToken()}`; // apps; the website uses its cookie
+  let res;
+  try { res = await fetch(`${SERVER}/api${path}`, init); } catch { throw new Error(isNative ? "Can't reach the server — check your connection" : 'Network error'); }
+  if (res.status === 401 && isNative && getToken()) await setToken(null);
   if (opts.raw) { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Request failed (${res.status})`); return res; }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith('/auth/')) { S.loaded = false; location.hash = '#/login'; throw new Error('Please sign in'); }
@@ -96,7 +101,17 @@ function loadGoogle() {
 
 async function renderSignIn(el, extra = () => ({})) {
   const s = S.session;
-  if (s.googleClientId) {
+  if (isNative) {
+    // Google doesn't allow its sign-in inside apps' web views, so the app signs in through the phone's browser.
+    el.querySelector('.gsi').innerHTML = '<button class="gsi-native" data-action="native-google"><span class="g">G</span> Continue with Google</button>';
+    actions['native-google'] = async () => {
+      showSignInError(null);
+      try {
+        const { code, verifier } = await browserSignIn(extra());
+        await finishSignIn(await exchangeAppCode(code, verifier));
+      } catch (err) { showSignInError(err); }
+    };
+  } else if (s.googleClientId) {
     try {
       await loadGoogle();
       google.accounts.id.initialize({
@@ -115,17 +130,31 @@ async function renderSignIn(el, extra = () => ({})) {
       <form data-form="dev-login" class="stack"><p class="small muted">Local testing sign-in</p>
         <input name="name" placeholder="Name" required><input name="email" type="email" placeholder="Email" required>
         <button>Sign in (dev)</button></form>`;
-    forms['dev-login'] = async (f) => finishSignIn(await api('/auth/dev', { body: { name: f.name.value, email: f.email.value, ...extra() } })).catch(showSignInError);
+    forms['dev-login'] = async (f) => {
+      try {
+        const me = await api('/auth/dev', { body: { name: f.name.value, email: f.email.value, app: isNative || undefined, ...extra() } });
+        if (me.token) await setToken(me.token);
+        await finishSignIn(me);
+      } catch (err) { showSignInError(err); }
+    };
   }
 }
 function showSignInError(err) {
   const box = document.getElementById('signin-error');
-  if (box) box.innerHTML = err.code === 'invite_required'
-    ? '<p>To join, ask someone in your family for an <strong>invite link</strong> (More → Family → Invite) and open it on this phone.</p>'
-    : `<p class="danger">${esc(err.message)}</p>`;
+  if (!box) return;
+  if (!err) { box.innerHTML = ''; return; }
+  box.innerHTML = err.code === 'invite_required'
+    ? `<p>To join, ask someone in your family for an <strong>invite</strong> (More → Family → Invite)${isNative ? ' and enter its code below' : ' and open the link on this phone'}.</p>`
+    : err.code === 'cancelled' ? '<p class="muted">Sign-in cancelled.</p>' : `<p class="danger">${esc(err.message)}</p>`;
+}
+/** Apps: trade the one-time code from the browser (plus our secret) for a session token. */
+async function exchangeAppCode(code, verifier) {
+  const me = await api('/auth/app/exchange', { body: { code, verifier } });
+  await setToken(me.token);
+  return me;
 }
 async function finishSignIn(me) {
-  S.session = await fetch('/api/session').then((r) => r.json());
+  S.session = await api('/session');
   S.loaded = false;
   connectLive();
   const next = new URLSearchParams(location.hash.split('?')[1] || '').get('next');
@@ -145,7 +174,9 @@ views.login = async () => {
       <div class="gsi center"></div>
       <div id="signin-error"></div>
       <div class="dev"></div>
-      ${first ? '' : '<p class="small muted">New here? Open the invite link someone in your family sent you.</p>'}
+      ${first ? '' : isNative
+        ? '<form data-form="go-invite" class="row gap"><input name="code" placeholder="Invite code (new here?)" class="grow" autocapitalize="characters" required><button>Next</button></form>'
+        : '<p class="small muted">New here? Open the invite link someone in your family sent you.</p>'}
     </div>`;
   await renderSignIn($view, () => ({ familyName: document.getElementById('family-name')?.value || undefined }));
 };
@@ -567,12 +598,12 @@ views.more = async () => {
       <p class="small muted">${esc(me.email)} · signed in with Google</p>
       <form data-form="rename-me" class="row gap"><input name="name" value="${esc(me.name)}" class="grow" required aria-label="Your name"><button>Save name</button></form>
       <div class="row gap wrap">
-        <a class="btn" href="/api/export">💾 Download backup</a>
+        ${isNative ? '' : '<a class="btn" href="/api/export">💾 Download backup</a>'}
         <button data-action="logout">Sign out</button>
         <button class="link" data-action="logout-everywhere">Sign out on all devices</button>
         <button class="link danger" data-action="leave-family">Leave family</button>
       </div>
-      <p class="small muted">Tip: open this page in Chrome and choose <em>Add to Home screen</em> to use it like an app.</p>
+      <p class="small muted">${isNative ? `Our Meals ${APP_VERSION} for ${platform === 'ios' ? 'iOS' : 'Android'}` : 'Tip: open this page in Chrome and choose <em>Add to Home screen</em> to use it like an app.'}</p>
     </div>`;
 };
 
@@ -714,11 +745,11 @@ const actions = {
   'cooked-today': async (el) => { await live(api(`/recipes/${el.dataset.id}/cooked`, { body: {} })); toast('Logged as cooked today'); render(); },
   'recipe-delete': async (el) => { if (confirm('Delete this recipe?')) { await api(`/recipes/${el.dataset.id}`, { method: 'DELETE' }); await loadAll(); location.hash = '#/recipes'; } },
   'open-original': async (el) => {
-    const win = window.open('', '_blank');
-    const res = await api('/dropbox/download', { body: { path: el.dataset.path }, raw: true });
-    const type = /\.pdf$/i.test(el.dataset.path) ? 'application/pdf' : 'text/plain';
-    const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type }));
-    if (win) win.location = url; else location.href = url;
+    const win = isNative ? null : window.open('', '_blank'); // open now so pop-up blockers allow it
+    try {
+      const { url } = await api('/dropbox/link', { body: { path: el.dataset.path } });
+      if (win) win.location = url; else await openExternal(url);
+    } catch (err) { win?.close(); throw err; }
   },
   'recipes-filter': (el) => { const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.set('f', el.dataset.value); q.set('q', document.getElementById('recipe-search').value); location.hash = `#/recipes?${q}`; },
   'ideas-set': (el) => { localStorage.setItem(el.dataset.key, el.dataset.value); setIdeas({ [el.dataset.key]: el.dataset.value }); },
@@ -739,8 +770,8 @@ const actions = {
   'dropbox-import': async () => { if (!S.importing) { render(); await runDropboxImport(); } },
   'dropbox-retry': async () => { await api('/dropbox/retry-failed', { body: {} }); await runDropboxImport(); },
   'dropbox-disconnect': async () => { if (confirm('Disconnect Dropbox? Imported recipes stay.')) { await api('/dropbox/disconnect', { body: {} }); render(); } },
-  logout: async () => { await api('/auth/logout', { body: {} }); S.loaded = false; disconnectLive(); location.hash = '#/login'; S.session.authed = false; },
-  'logout-everywhere': async () => { if (confirm('Sign out on every phone and computer?')) { await api('/me/logout-everywhere', { body: {} }); S.loaded = false; disconnectLive(); location.hash = '#/login'; } },
+  logout: async () => { await api('/auth/logout', { body: {} }); await setToken(null); S.loaded = false; disconnectLive(); location.hash = '#/login'; S.session.authed = false; },
+  'logout-everywhere': async () => { if (confirm('Sign out on every phone and computer?')) { await api('/me/logout-everywhere', { body: {} }); await setToken(null); S.loaded = false; disconnectLive(); location.hash = '#/login'; } },
   'leave-family': async () => { if (confirm('Leave this family? You will lose access to its recipes and plans.')) { await api('/family/leave', { body: {} }); S.loaded = false; location.hash = '#/welcome'; } },
   'join-family': async (el) => { await api('/family/join', { body: { code: el.dataset.code } }); S.loaded = false; S.session.hasFamily = true; connectLive(); toast('Welcome to the family 🎉'); location.hash = '#/plan'; },
   'remove-member': async (el) => { if (confirm(`Remove ${el.dataset.name} from the family?`)) { await api(`/family/members/${el.dataset.id}`, { method: 'DELETE' }); await loadAll(); render(); } },
@@ -748,7 +779,7 @@ const actions = {
   'cancel-invite': async (el) => { await api(`/family/invites/${encodeURIComponent(el.dataset.code)}`, { method: 'DELETE' }); render(); },
   invite: async () => {
     const inv = await api('/family/invites', { body: {} });
-    const url = `${location.origin}/#/join/${inv.code}`;
+    const url = `${shareBase()}/#/join/${inv.code}`;
     document.getElementById('invite-box').innerHTML = `
       <div class="invite"><p class="small">Send this link (valid 7 days). They sign in with Google and join your family:</p>
       <input readonly value="${esc(url)}" onclick="this.select()">
@@ -819,7 +850,7 @@ const forms = {
   'rename-me': async (f) => { await api('/me', { method: 'PATCH', body: { name: f.name.value } }); await loadAll(); toast('Saved'); render(); },
   'dropbox-start': async (f) => {
     const { url } = await api('/dropbox/auth/start', { body: { appKey: f.appKey?.value } });
-    window.open(url, '_blank', 'noopener');
+    await openExternal(url);
     // Remember we're waiting for the code: coming back from the Dropbox tab refreshes this screen.
     sessionStorage.setItem('dropboxAwaitingCode', '1');
     document.getElementById('dropbox-code').hidden = false;
@@ -872,7 +903,8 @@ document.addEventListener('submit', async (e) => {
 let ws; let wsRetry = 1000; let wsTimer; let pingTimer; let refreshTimer;
 function connectLive() {
   if (!S.session?.authed || ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return;
-  try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/live`); } catch { return; }
+  const tokenParam = getToken() ? `?access_token=${encodeURIComponent(getToken())}` : '';
+  try { ws = new WebSocket(`${wsBase()}/api/live${tokenParam}`); } catch { return; }
   ws.onopen = () => { wsRetry = 1000; clearInterval(pingTimer); pingTimer = setInterval(() => ws?.readyState === 1 && ws.send('ping'), 30000); };
   ws.onmessage = (ev) => { if (ev.data !== 'pong') scheduleRefresh(); };
   ws.onclose = () => { clearInterval(pingTimer); if (S.session?.authed) { clearTimeout(wsTimer); wsTimer = setTimeout(connectLive, wsRetry); wsRetry = Math.min(wsRetry * 2, 60000); } };
@@ -890,6 +922,9 @@ function scheduleRefresh() {
   }, 300);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { connectLive(); scheduleRefresh(); } });
+onResume(() => { connectLive(); scheduleRefresh(); });
+// Android back button: go back through the app's screens, and close the app from the plan.
+onBackButton(({ canGoBack }) => { if (canGoBack && !['plan', 'login', 'welcome'].includes(S.route)) history.back(); else exitApp(); });
 
 // ---------- routing ----------
 async function render() {
@@ -907,7 +942,14 @@ async function render() {
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
 (async () => {
-  S.session = await fetch('/api/session').then((r) => r.json()).catch(() => ({ authed: false }));
+  setupChrome();
+  await loadToken();
+  // A sign-in that finished after the app had been closed arrives here.
+  listenForAuthLinks(async ({ code, verifier, error, message }) => {
+    if (error || !code || !verifier) { location.hash = '#/login'; setTimeout(() => showSignInError({ code: error, message }), 300); return; }
+    try { await finishSignIn(await exchangeAppCode(code, verifier)); } catch (err) { location.hash = '#/login'; setTimeout(() => showSignInError(err), 300); }
+  });
+  S.session = await api('/session').catch(() => ({ authed: false, offline: true }));
   const route = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
   let target = null;
   if (route === 'join') target = null; // invite links work signed in or out
@@ -916,5 +958,5 @@ window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); }
   else if (!route || PUBLIC_ROUTES.has(route)) target = '#/plan';
   if (target && target !== location.hash) location.hash = target; else render();
   if (S.session.authed) connectLive();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if (!isNative && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

@@ -3,8 +3,9 @@
 // Add new migration files here in order (a test checks this list matches the migrations/ folder).
 import m0001 from '../migrations/0001_init.sql';
 import m0002 from '../migrations/0002_recipe_meta.sql';
+import m0003 from '../migrations/0003_app_sign_in.sql';
 
-export const MIGRATIONS = [['0001_init.sql', m0001], ['0002_recipe_meta.sql', m0002]];
+export const MIGRATIONS = [['0001_init.sql', m0001], ['0002_recipe_meta.sql', m0002], ['0003_app_sign_in.sql', m0003]];
 
 const TRACKING_TABLE = `CREATE TABLE IF NOT EXISTS d1_migrations(
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
