@@ -127,3 +127,19 @@ details form { margin-top: 10px; }
 .browser .list.compact .item { padding: 0; }
 .browser .item button.link { justify-content: flex-start; text-align: left; width: 100%; color: var(--ink); padding: 10px 4px; }
 .browser > .primary { width: 100%; margin-top: 8px; }
+.chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px; margin: 2px 0; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.chip-row::-webkit-scrollbar { display: none; }
+.chip-btn { flex: none; min-height: 36px; padding: 6px 12px; border-radius: 99px; font-size: .85rem; }
+.chip-btn.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
+.chip-btn .count { opacity: .7; font-weight: normal; margin-left: 2px; }
+.pill.course { background: #6b5ca5; margin-right: 2px; }
+.badges { font-size: .85rem; letter-spacing: 1px; }
+.auto { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 0 5px; margin-left: 4px; }
+button.link.small { min-height: 0; padding: 0 2px; font-size: inherit; }
+.chip-btn.clear { border-style: dashed; color: var(--danger); }
+#recipe-controls { min-width: 0; max-width: 100%; }
+.filter-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0; }
+.filter-selects label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.filter-selects select { flex: 1; min-width: 0; width: 100%; }
+.result-count { margin: 6px 4px 0; }
+main { overflow-x: clip; }

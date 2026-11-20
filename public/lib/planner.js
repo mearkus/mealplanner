@@ -1,6 +1,7 @@
 // Pure planning logic: shopping list aggregation, ingredient overlap, batching, suggestions.
 import { combineAmounts, formatAmount, CATEGORY_ORDER } from './ingredients.js';
 import { HEALTH_LEVELS } from './health.js';
+import { effectiveMeta, fitsSeason, fitsOccasion, SEASON_LABELS, OCCASION_LABELS } from './classify.js';
 
 // Sharing perishables matters most: half a bunch of cilantro shouldn't go to waste.
 const CATEGORY_WEIGHT = { Produce: 1.5, 'Meat & Seafood': 1.2, 'Dairy & Eggs': 1.1, Bakery: 1.2, Pantry: 0.6, Frozen: 0.5, 'Spices & Seasonings': 0.2, Other: 0.6 };
@@ -180,14 +181,21 @@ function rng(seed) {
  */
 export function suggestMeals(allRecipes, {
   count = 5, goal = 'balanced', seedRecipeIds = [], avoidRecentDays = 10, favoritesWeight = 1,
-  today = new Date(), seed = Date.now(), excludeIds = [],
+  today = new Date(), seed = Date.now(), excludeIds = [], course = 'main', season = null, occasion = null,
 } = {}) {
   const g = HEALTH_GOALS[goal] || HEALTH_GOALS.balanced;
   const random = rng(seed);
   const byId = new Map(allRecipes.map((r) => [r.id, r]));
   const selected = seedRecipeIds.map((id) => byId.get(id)).filter(Boolean);
   const exclude = new Set([...seedRecipeIds, ...excludeIds]);
+  const metaOf = new Map(allRecipes.map((r) => [r.id, effectiveMeta(r)]));
   let pool = allRecipes.filter((r) => !exclude.has(r.id) && (r.ingredients?.length || 0) > 0);
+  // Course is a hard filter (don't suggest a dessert as dinner); season and night type are soft (relaxed if too few).
+  if (course) pool = pool.filter((r) => metaOf.get(r.id).course === course);
+  const inSeason = pool.filter((r) => fitsSeason(metaOf.get(r.id), season));
+  if (season && inSeason.length >= count) pool = inSeason;
+  const rightNight = pool.filter((r) => fitsOccasion(metaOf.get(r.id), occasion));
+  if (occasion && rightNight.length >= count) pool = rightNight;
   const notRecent = pool.filter((r) => { const d = daysSince(r.lastCooked, today); return d == null || d >= avoidRecentDays; });
   if (notRecent.length >= count) pool = notRecent;
   const healthy = pool.filter((r) => r.health >= g.min && (goal !== 'comfort' || r.health <= 3));
@@ -220,6 +228,9 @@ export function suggestMeals(allRecipes, {
       score += Math.min(overlapW, 4) * 0.5;
       if (sharedNames.size) reasons.push(`Shares ${[...sharedNames].slice(0, 3).join(', ')}`);
       if (g.ideal != null && r.health >= 4 && goal === 'light') reasons.push(HEALTH_LEVELS[r.health]);
+      const m = metaOf.get(r.id);
+      if (season && m.seasons.includes(season)) { score += 0.6; reasons.push(`Great in ${SEASON_LABELS[season].split(' ')[1].toLowerCase()}`); }
+      if (occasion && m.occasions.includes(occasion)) { score += 0.4; reasons.push(OCCASION_LABELS[occasion].split(' ')[1]); }
       if (!best || score > best.score) best = { recipe: r, score, reasons };
     }
     picks.push(best.recipe);
@@ -229,6 +240,37 @@ export function suggestMeals(allRecipes, {
   return picks.map((r) => ({
     id: r.id, title: r.title, health: r.health, favorite: r.favorite, lastCooked: r.lastCooked, reasons: why.get(r.id),
   }));
+}
+
+/**
+ * Sides that go with the planned mains: share ingredients you're already buying, balance healthiness
+ * (lighter sides next to rich mains), suit the season, and favourites first.
+ */
+export function suggestSides(planRecipes, allRecipes, { season = null, limit = 5 } = {}) {
+  const mains = planRecipes.filter((r) => effectiveMeta(r).course === 'main');
+  if (!mains.length) return [];
+  const inPlan = new Set(planRecipes.map((r) => r.id));
+  const avgHealth = mains.reduce((s, r) => s + r.health, 0) / mains.length;
+  const out = [];
+  for (const r of allRecipes) {
+    if (inPlan.has(r.id)) continue;
+    const m = effectiveMeta(r);
+    if (m.course !== 'side' || !(r.ingredients?.length)) continue;
+    const reasons = []; let score = 0;
+    let bestShare = { weight: 0, shared: [], with: null };
+    for (const main of mains) {
+      const s = sharedIngredients(r, main);
+      if (s.weight > bestShare.weight) bestShare = { ...s, with: main.title };
+    }
+    if (bestShare.weight > 0) { score += Math.min(bestShare.weight, 3); reasons.push(`Uses ${bestShare.shared.slice(0, 2).map((x) => x.name).join(' & ')} (also in ${bestShare.with})`); }
+    if (avgHealth <= 3 && r.health >= 4) { score += 1.2; reasons.push('Lightens up the week'); }
+    else score += (r.health - 3) * 0.2;
+    if (season && m.seasons.includes(season)) { score += 0.6; reasons.push('In season'); }
+    if (season && !fitsSeason(m, season)) score -= 1;
+    if (r.favorite) { score += 0.8; reasons.push('Favourite'); }
+    out.push({ id: r.id, title: r.title, health: r.health, favorite: r.favorite, score, reasons });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 export { PERISHABLE };

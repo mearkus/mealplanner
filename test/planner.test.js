@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseIngredientLine } from '../public/lib/ingredients.js';
-import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals } from '../public/lib/planner.js';
+import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals, suggestSides } from '../public/lib/planner.js';
 import { scoreHealth } from '../public/lib/health.js';
 
 const mk = (id, title, lines, extra = {}) => ({ id, title, servings: 4, health: 3, favorite: false, lastCooked: null, ...extra, ingredients: lines.map(parseIngredientLine) });
@@ -46,11 +46,11 @@ test('forgotten favourites sorted by longest gap', () => {
 
 test('suggestions respect the health goal', () => {
   const all = [tacos, bowls, pasta, salad];
-  const light = suggestMeals(all, { count: 2, goal: 'light', today, seed: 1 });
+  const light = suggestMeals(all, { count: 2, goal: 'light', today, seed: 1, course: null });
   assert.ok(light.every((r) => r.health >= 4));
-  const comfort = suggestMeals(all, { count: 1, goal: 'comfort', today, seed: 1 });
+  const comfort = suggestMeals(all, { count: 1, goal: 'comfort', today, seed: 1, course: null });
   assert.ok(comfort[0].health <= 3);
-  const five = suggestMeals(all, { count: 10, goal: 'any', today, seed: 2 });
+  const five = suggestMeals(all, { count: 10, goal: 'any', today, seed: 2, course: null });
   assert.equal(new Set(five.map((r) => r.id)).size, 4);
 });
 
@@ -70,4 +70,31 @@ test('batch groups stay tight instead of chaining the whole week', () => {
   assert.ok(groups.every((g) => g.recipes.length <= 3));
   assert.ok(!groups.some((g) => g.recipes.length === 4));
   for (const g of groups) assert.ok(g.shared.length >= 2);
+});
+
+test('suggestions pick main dishes and prefer the season / night asked for', () => {
+  const chili = mk(21, 'Beef Chili', ['1 lb ground beef', '1 can kidney beans'], { prepMinutes: 90 });
+  const tacos2 = mk(22, 'Fish Tacos', ['1 lb cod', '8 corn tortillas'], { prepMinutes: 25 });
+  const grilled = mk(23, 'Grilled Chicken Skewers', ['1 lb chicken breast', '1 bell pepper'], { prepMinutes: 30 });
+  const slaw = mk(24, 'Coleslaw', ['1 head cabbage', '2 carrots']);
+  const cookies = mk(25, 'Chocolate Chip Cookies', ['2 cups flour', '1 cup sugar']);
+  const all = [chili, tacos2, grilled, slaw, cookies];
+  const picks = suggestMeals(all, { count: 3, goal: 'any', today, seed: 3 });
+  assert.deepEqual(picks.map((r) => r.id).sort(), [21, 22, 23]); // no sides or desserts
+  const winter = suggestMeals(all, { count: 1, goal: 'any', today, seed: 3, season: 'winter' });
+  assert.equal(winter[0].id, 21);
+  const weeknight = suggestMeals(all, { count: 2, goal: 'any', today, seed: 3, occasion: 'weeknight' });
+  assert.ok(weeknight.every((r) => r.id !== 21), 'the 90-minute chili is not a weeknight pick');
+});
+
+test('side suggestions complement the planned mains', () => {
+  const pasta = mk(31, 'Creamy Sausage Pasta', ['1 lb penne', '1 lb sausage', '1 cup heavy cream'], { health: 1 });
+  const salad = mk(32, 'Arugula Salad', ['5 oz arugula', '1 lemon'], { health: 5 });
+  const fries = mk(33, 'French Fries', ['2 lb potatoes', 'vegetable oil for frying'], { health: 1 });
+  const bread = mk(34, 'Garlic Bread', ['1 baguette', '4 tbsp butter', '3 cloves garlic'], { health: 2 });
+  const sides = suggestSides([pasta], [pasta, salad, fries, bread], { season: 'fall' });
+  assert.equal(sides[0].id, 32); // a light side next to a rich main
+  assert.ok(sides[0].reasons.includes('Lightens up the week'));
+  assert.ok(!sides.some((x) => x.id === 31));
+  assert.deepEqual(suggestSides([salad], [pasta, salad, fries]), []); // no mains planned → nothing to pair
 });
