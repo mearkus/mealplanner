@@ -1,6 +1,7 @@
 // Our Meals — single-page app (no build step). The server stores family data; this file computes the plan,
 // shopping list, batching and suggestions on the phone, and reads recipe files (PDF/Word/web) locally.
-import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals, sharedIngredients } from './lib/planner.js';
+import { buildShoppingList, batchGroups, complementarySuggestions, forgottenFavorites, suggestMeals, suggestSides, sharedIngredients } from './lib/planner.js';
+import { effectiveMeta, currentSeason, fitsSeason, fitsOccasion, COURSES, COURSE_LABELS, SEASONS, SEASON_LABELS, OCCASIONS, OCCASION_LABELS } from './lib/classify.js';
 import { lighterTips, scoreHealth } from './lib/health.js';
 import { fileToRecipes, browserLibs, textToRecipes, recipesFromJsonLd, htmlToText, isSupported, SUPPORTED } from './lib/extract.js';
 
@@ -15,6 +16,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const HEALTH = { 1: 'Indulgent', 2: 'Comfort', 3: 'Balanced', 4: 'Healthy', 5: 'Very healthy' };
 const healthPill = (h) => `<span class="pill h${h}" title="Healthiness ${h}/5">${HEALTH[h] || '—'}</span>`;
 const star = (on) => (on ? '★' : '☆');
+const coursePill = (meta) => (meta && meta.course !== 'main' ? `<span class="pill course">${COURSE_LABELS[meta.course]}</span>` : '');
+const metaBadges = (meta) => (meta ? `${meta.seasons.map((x) => SEASON_LABELS[x].split(' ')[0]).join('')}${meta.occasions.map((x) => OCCASION_LABELS[x].split(' ')[0]).join('')}` : '');
 const PUBLIC_ROUTES = new Set(['login', 'join', 'welcome']);
 
 function daysAgo(date) {
@@ -67,7 +70,7 @@ function recipesWithStats() {
     count.set(c.recipeId, (count.get(c.recipeId) || 0) + 1);
     if (!last.has(c.recipeId) || c.cookedOn > last.get(c.recipeId)) last.set(c.recipeId, c.cookedOn);
   }
-  return S.recipes.map((r) => ({ ...r, lastCooked: last.get(r.id) || null, timesCooked: count.get(r.id) || 0 }));
+  return S.recipes.map((r) => ({ ...r, lastCooked: last.get(r.id) || null, timesCooked: count.get(r.id) || 0, meta: effectiveMeta(r) }));
 }
 const byId = (list) => new Map(list.map((r) => [r.id, r]));
 
@@ -188,6 +191,7 @@ views.plan = async () => {
   const planRecipes = items.map((p) => p.recipe);
   const avg = planRecipes.length ? planRecipes.reduce((s, r) => s + r.health, 0) / planRecipes.length : null;
   const batches = batchGroups(planRecipes); const complements = complementarySuggestions(planRecipes, recipes);
+  const sides = suggestSides(planRecipes, recipes, { season: currentSeason() });
   const days = weekDays();
   $view.innerHTML = items.length ? `
       <div class="card summary">
@@ -200,7 +204,7 @@ views.plan = async () => {
           <li class="item plan-item">
             <div class="grow">
               <a href="#/recipe/${p.recipe.id}" class="title">${p.recipe.favorite ? '<span class="fav">★</span> ' : ''}${esc(p.recipe.title)}</a>
-              <div class="meta">${healthPill(p.recipe.health)}
+              <div class="meta">${coursePill(p.recipe.meta)}${healthPill(p.recipe.health)}
                 <select data-action="plan-day" data-id="${p.id}" aria-label="Day"><option value="">Any day</option>
                   ${days.map((d) => `<option value="${d.value}" ${d.value === p.plannedFor ? 'selected' : ''}>${d.label}</option>`).join('')}
                   ${p.plannedFor && !days.some((d) => d.value === p.plannedFor) ? `<option value="${p.plannedFor}" selected>${dayLabel(p.plannedFor)}</option>` : ''}
@@ -220,6 +224,11 @@ views.plan = async () => {
             <div class="chips">${b.shared.slice(0, 10).map((s) => `<span class="chip">${esc(s.name)} ×${s.recipes.length}</span>`).join('')}</div>
             ${b.tips.map((t) => `<p class="tip">${esc(t)}</p>`).join('')}
           </div>`).join('')}` : ''}
+      ${sides.length ? `<h3>🥗 Sides for this week</h3><p class="muted small">Sides that go with your mains — sharing ingredients, balancing richer dishes, or in season.</p>
+        <ul class="list">${sides.map((c) => `
+          <li class="item"><div class="grow"><a href="#/recipe/${c.id}" class="title">${c.favorite ? '<span class="fav">★</span> ' : ''}${esc(c.title)}</a>
+              <div class="meta">${healthPill(c.health)}</div>${c.reasons.length ? `<div class="small reasons">${c.reasons.map(esc).join(' · ')}</div>` : ''}</div>
+            <button class="icon add" data-action="plan-add" data-recipe="${c.id}" title="Add to plan">＋</button></li>`).join('')}</ul>` : ''}
       ${complements.length ? `<h3>♻️ Use up what you're buying</h3><p class="muted small">These recipes reuse ingredients already on your list.</p>
         <ul class="list">${complements.map((c) => `
           <li class="item"><div class="grow"><a href="#/recipe/${c.id}" class="title">${esc(c.title)}</a>
@@ -239,8 +248,13 @@ views.ideas = async () => {
   const count = Number(q.get('count') || localStorage.getItem('count') || 5);
   const favorites = q.get('favorites') || 'normal';
   const seed = Number(q.get('seed')) || Math.floor(Date.now() / 3600000);
+  const season = q.has('season') ? q.get('season') : currentSeason();
+  const night = q.get('night') || '';
   const recipes = recipesWithStats();
-  const suggested = suggestMeals(recipes, { count, goal, seed, seedRecipeIds: S.live.plan.map((p) => p.recipeId), favoritesWeight: favorites === 'more' ? 2 : favorites === 'less' ? 0.3 : 1 });
+  const suggested = suggestMeals(recipes, {
+    count, goal, seed, seedRecipeIds: S.live.plan.map((p) => p.recipeId), favoritesWeight: favorites === 'more' ? 2 : favorites === 'less' ? 0.3 : 1,
+    course: 'main', season: season || null, occasion: night || null,
+  });
   const forgotten = forgottenFavorites(recipes);
   const goals = { light: '🥗 Light', balanced: '⚖️ Balanced', comfort: '🍝 Comfort', any: '🎲 Anything' };
   $view.innerHTML = `
@@ -253,6 +267,13 @@ views.ideas = async () => {
           <option value="less" ${favorites === 'less' ? 'selected' : ''}>Try new things</option><option value="normal" ${favorites === 'normal' ? 'selected' : ''}>Mix</option>
           <option value="more" ${favorites === 'more' ? 'selected' : ''}>Mostly favourites</option></select></label>
       </div>
+      <div class="row gap wrap">
+        <label>Season <select data-action="ideas-season"><option value="" ${!season ? 'selected' : ''}>Any time</option>
+          ${SEASONS.map((x) => `<option value="${x}" ${x === season ? 'selected' : ''}>${SEASON_LABELS[x]}${x === currentSeason() ? ' (now)' : ''}</option>`).join('')}</select></label>
+        <label>Nights <select data-action="ideas-night"><option value="">Any</option>
+          ${OCCASIONS.map((x) => `<option value="${x}" ${x === night ? 'selected' : ''}>${OCCASION_LABELS[x]}</option>`).join('')}</select></label>
+      </div>
+      <p class="small muted">Suggests main dishes. Sides that go with them show on the Plan tab.</p>
     </div>
     ${suggested.length ? `<form data-form="add-suggestions"><ul class="list">${suggested.map((s) => `
           <li class="item"><label class="check"><input type="checkbox" name="r" value="${s.id}" checked></label>
@@ -296,35 +317,99 @@ views.shop = async () => {
     ${list.total ? '<div class="row gap center"><button data-action="shop-share">📤 Share list</button><button data-action="shop-clear">Remove checked extras</button></div>' : ''}`;
 };
 
+// ---------- recipe discovery ----------
+const RECIPE_FILTERS = ['q', 'course', 'season', 'when', 'fav', 'health', 'quick', 'stale', 'tag', 'sort'];
+const SORTS = { az: 'A–Z', recent: 'Recently added', stale: 'Longest since cooked', quick: 'Quickest', healthy: 'Healthiest', cooked: 'Most cooked' };
+
+function recipeFilters() {
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const f = Object.fromEntries(RECIPE_FILTERS.map((k) => [k, q.get(k) || '']));
+  if (q.get('f') === 'fav') f.fav = '1'; // older links
+  return f;
+}
+function setRecipeFilters(f) {
+  const q = new URLSearchParams();
+  for (const k of RECIPE_FILTERS) if (f[k]) q.set(k, f[k]);
+  history.replaceState(null, '', `#/recipes${q.toString() ? `?${q}` : ''}`);
+}
+const daysSinceCooked = (r) => (r.lastCooked ? (Date.now() - new Date(`${r.lastCooked}T12:00:00`)) / 86400000 : Infinity);
+
+function filterRecipes(all, f, { except } = {}) {
+  const term = f.q.trim().toLowerCase();
+  return all.filter((r) => {
+    if (term && !(r.title.toLowerCase().includes(term) || r.tags.some((t) => t.toLowerCase().includes(term)) || r.ingredients.some((i) => i.name.includes(term) || (i.raw || '').toLowerCase().includes(term)))) return false;
+    if (except !== 'course' && f.course && r.meta.course !== f.course) return false;
+    if (f.season && !fitsSeason(r.meta, f.season)) return false;
+    if (f.when && !fitsOccasion(r.meta, f.when)) return false;
+    if (f.fav && !r.favorite) return false;
+    if (f.health === 'healthy' && r.health < 4) return false;
+    if (f.health === 'comfort' && r.health > 2) return false;
+    if (f.quick && !(r.prepMinutes && r.prepMinutes <= 30)) return false;
+    if (f.stale && daysSinceCooked(r) <= 30) return false;
+    if (f.tag && !r.tags.some((t) => t.toLowerCase() === f.tag)) return false;
+    return true;
+  });
+}
+function sortRecipes(list, sort) {
+  const by = {
+    az: (a, b) => a.title.localeCompare(b.title),
+    recent: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.id - a.id,
+    stale: (a, b) => daysSinceCooked(b) - daysSinceCooked(a) || a.title.localeCompare(b.title),
+    quick: (a, b) => (a.prepMinutes || 999) - (b.prepMinutes || 999) || a.title.localeCompare(b.title),
+    healthy: (a, b) => b.health - a.health || a.title.localeCompare(b.title),
+    cooked: (a, b) => b.timesCooked - a.timesCooked || a.title.localeCompare(b.title),
+  }[sort] || ((a, b) => a.title.localeCompare(b.title));
+  return [...list].sort(by);
+}
+
+function renderRecipeResults(all) {
+  const f = recipeFilters();
+  const chip = (key, value, label, on = f[key] === value) => `<button data-action="rf" data-key="${key}" data-value="${value}" class="chip-btn ${on ? 'on' : ''}">${label}</button>`;
+  const courseCounts = Object.fromEntries(COURSES.map((c) => [c, 0]));
+  for (const r of filterRecipes(all, f, { except: 'course' })) courseCounts[r.meta.course]++;
+  const tagCounts = new Map();
+  for (const r of all) for (const t of r.tags) tagCounts.set(t.toLowerCase(), (tagCounts.get(t.toLowerCase()) || 0) + 1);
+  const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  const list = sortRecipes(filterRecipes(all, f), f.sort);
+  const active = RECIPE_FILTERS.filter((k) => k !== 'q' && k !== 'sort' && f[k]).length;
+  document.getElementById('recipe-controls').innerHTML = `
+    <div class="chip-row">${chip('course', '', `All <span class="count">${Object.values(courseCounts).reduce((a, b) => a + b, 0)}</span>`, !f.course)}
+      ${COURSES.filter((c) => courseCounts[c] || f.course === c).map((c) => chip('course', c, `${COURSE_LABELS[c]}${['other', 'breakfast'].includes(c) ? '' : 's'} <span class="count">${courseCounts[c]}</span>`)).join('')}</div>
+    <div class="chip-row">
+      ${active ? '<button data-action="rf-clear" class="chip-btn clear">✕ Clear</button>' : ''}
+      ${chip('fav', '1', '★ Favourites')}
+      ${SEASONS.map((x) => chip('season', x, SEASON_LABELS[x] + (x === currentSeason() ? ' · now' : ''))).join('')}
+      ${OCCASIONS.map((x) => chip('when', x, OCCASION_LABELS[x])).join('')}
+      ${chip('quick', '1', '⏱ 30 min or less')}
+      ${chip('health', 'healthy', '🥗 Healthy')}${chip('health', 'comfort', '🍝 Comfort')}
+      ${chip('stale', '1', '⏳ Not lately')}
+    </div>
+    <div class="filter-selects">
+      ${tags.length ? `<label class="small">Tag <select data-action="rf-select" data-key="tag"><option value="">Any</option>${tags.map(([t, n]) => `<option value="${esc(t)}" ${f.tag === t ? 'selected' : ''}>${esc(t)} (${n})</option>`).join('')}</select></label>` : ''}
+      <label class="small">Sort <select data-action="rf-select" data-key="sort">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}" ${(f.sort || 'az') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    </div>
+    <p class="small muted result-count">${list.length} recipe${list.length === 1 ? '' : 's'}${active ? ` · ${active} filter${active > 1 ? 's' : ''} on` : ''}</p>`;
+  document.getElementById('recipe-list').innerHTML = list.map((r) => `
+    <li class="item">
+      <button class="icon fav-toggle ${r.favorite ? 'on' : ''}" data-action="fav" data-id="${r.id}" data-on="${r.favorite ? 1 : 0}" title="Favourite">${star(r.favorite)}</button>
+      <div class="grow"><a href="#/recipe/${r.id}" class="title">${esc(r.title)}</a>
+        <div class="meta">${coursePill(r.meta)}${healthPill(r.health)} <span class="small muted">${esc(daysAgo(r.lastCooked))}${r.prepMinutes ? ` · ${r.prepMinutes} min` : ''}</span> <span class="badges">${metaBadges(r.meta)}</span></div></div>
+      <button class="icon add" data-action="plan-add" data-recipe="${r.id}" title="Add to plan">＋</button>
+    </li>`).join('') || (all.length ? '<li class="muted center">No recipes match these filters.</li>' : '');
+}
+
 views.recipes = async () => {
   setTitle('Recipes');
   await ensureLoaded();
   const all = recipesWithStats();
-  const q = new URLSearchParams(location.hash.split('?')[1] || '');
-  const filter = q.get('f') || 'all';
+  const f = recipeFilters();
   $view.innerHTML = `
-    <div class="row gap"><input type="search" id="recipe-search" placeholder="Search recipes or ingredients…" value="${esc(q.get('q') || '')}" class="grow"><a class="btn primary" href="#/edit/new" title="New recipe">＋</a></div>
-    <div class="segmented small">${[['all', 'All'], ['fav', '★ Favourites'], ['healthy', '🥗 Healthy'], ['comfort', '🍝 Comfort'], ['stale', '⏳ Not lately']]
-      .map(([k, v]) => `<button data-action="recipes-filter" data-value="${k}" class="${k === filter ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="row gap"><input type="search" id="recipe-search" placeholder="Search titles, ingredients, tags…" value="${esc(f.q)}" class="grow"><a class="btn primary" href="#/edit/new" title="New recipe">＋</a></div>
+    <div id="recipe-controls"></div>
     <ul class="list" id="recipe-list"></ul>
     ${all.length ? '' : '<div class="empty card"><p>No recipes yet.</p><a class="btn primary" href="#/more">Import from Dropbox</a></div>'}`;
-  const render = () => {
-    const term = document.getElementById('recipe-search').value.trim().toLowerCase();
-    let list = all.filter((r) => !term || r.title.toLowerCase().includes(term) || r.tags.some((t) => t.toLowerCase().includes(term)) || r.ingredients.some((i) => i.name.includes(term)));
-    if (filter === 'fav') list = list.filter((r) => r.favorite);
-    if (filter === 'healthy') list = list.filter((r) => r.health >= 4);
-    if (filter === 'comfort') list = list.filter((r) => r.health <= 2);
-    if (filter === 'stale') list = list.filter((r) => !r.lastCooked || (Date.now() - new Date(r.lastCooked)) / 86400000 > 30).sort((a, b) => (a.lastCooked || '').localeCompare(b.lastCooked || ''));
-    document.getElementById('recipe-list').innerHTML = list.map((r) => `
-      <li class="item">
-        <button class="icon fav-toggle ${r.favorite ? 'on' : ''}" data-action="fav" data-id="${r.id}" data-on="${r.favorite ? 1 : 0}" title="Favourite">${star(r.favorite)}</button>
-        <div class="grow"><a href="#/recipe/${r.id}" class="title">${esc(r.title)}</a>
-          <div class="meta">${healthPill(r.health)} <span class="small muted">${esc(daysAgo(r.lastCooked))}${r.prepMinutes ? ` · ${r.prepMinutes} min` : ''}</span></div></div>
-        <button class="icon add" data-action="plan-add" data-recipe="${r.id}" title="Add to plan">＋</button>
-      </li>`).join('') || (all.length ? '<li class="muted center">No matches</li>' : '');
-  };
-  render();
-  document.getElementById('recipe-search').addEventListener('input', render);
+  renderRecipeResults(all);
+  document.getElementById('recipe-search').addEventListener('input', (e) => { setRecipeFilters({ ...recipeFilters(), q: e.target.value }); renderRecipeResults(all); });
 };
 
 views.recipe = async (rid) => {
@@ -348,6 +433,7 @@ views.recipe = async (rid) => {
       <div class="label">Healthiness</div>
       <div class="segmented small">${[1, 2, 3, 4, 5].map((h) => `<button data-action="set-health" data-id="${r.id}" data-value="${h}" class="${h === r.health ? 'on' : ''} h${h}">${HEALTH[h]}</button>`).join('')}</div>
       ${r.healthSource === 'auto' && auto.reasons.length ? `<p class="small muted">Auto-rated: ${esc(auto.reasons.join(', '))}. Tap to change.</p>` : ''}
+      ${metaEditor(r)}
       ${r.tags.length ? `<div class="chips">${r.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
       <div class="row gap wrap">
         <button class="primary" data-action="plan-add" data-recipe="${r.id}">＋ Add to plan</button>
@@ -367,6 +453,29 @@ views.recipe = async (rid) => {
     <p class="small muted">Source: ${esc(r.source)}${r.sourcePath ? ` — ${esc(r.sourcePath.replace(/^dropbox:/, 'Dropbox '))}` : ''}</p>
     <p class="center"><button class="link danger" data-action="recipe-delete" data-id="${r.id}">Delete recipe</button></p>`;
 };
+
+function metaEditor(r) {
+  const m = r.meta;
+  const autoTag = (isAuto) => (isAuto ? ' <span class="auto" title="The app\'s guess — tap to choose yourself">auto</span>' : '');
+  const btn = (kind, value, label, on, action = 'set-meta') => `<button data-action="${action}" data-id="${r.id}" data-kind="${kind}" data-value="${value}" class="${on ? 'on' : ''}">${label}</button>`;
+  const anyManual = !m.courseAuto || !m.seasonsAuto || !m.occasionsAuto;
+  return `
+    <div class="label">Course${autoTag(m.courseAuto)}</div>
+    <div class="segmented small">${COURSES.map((c) => btn('course', c, COURSE_LABELS[c], m.course === c)).join('')}</div>
+    <div class="label">Best in${autoTag(m.seasonsAuto)}</div>
+    <div class="segmented small">${btn('seasons', '', '📅 All year', m.seasons.length === 0)}${SEASONS.map((x) => btn('seasons', x, SEASON_LABELS[x], m.seasons.includes(x), 'toggle-meta')).join('')}</div>
+    <div class="label">Good for${autoTag(m.occasionsAuto)}</div>
+    <div class="segmented small">${btn('occasions', '', 'Any night', m.occasions.length === 0)}${OCCASIONS.map((x) => btn('occasions', x, OCCASION_LABELS[x], m.occasions.includes(x), 'toggle-meta')).join('')}</div>
+    ${anyManual ? `<p class="small muted"><button class="link small" data-action="meta-reset" data-id="${r.id}">Use the app's guesses again</button></p>` : ''}`;
+}
+
+/** Saves course/seasons/occasions for a recipe (optimistically) and re-renders. */
+async function saveMeta(id, patch) {
+  const r = S.recipes.find((x) => x.id === id);
+  const before = { course: r.course, seasons: r.seasons, occasions: r.occasions };
+  Object.assign(r, patch); render();
+  try { await api(`/recipes/${id}`, { method: 'PATCH', body: patch }); } catch (err) { Object.assign(r, before); render(); throw err; }
+}
 
 views.edit = async (rid) => {
   await ensureLoaded();
@@ -568,6 +677,20 @@ async function loadBrowse(path) {
 // ---------- actions ----------
 const live = async (p) => { await applyLive(await p); };
 const actions = {
+  'set-meta': (el) => saveMeta(Number(el.dataset.id), { [el.dataset.kind]: el.dataset.kind === 'course' ? el.dataset.value : [] }),
+  'toggle-meta': (el) => {
+    const id = Number(el.dataset.id); const kind = el.dataset.kind; const v = el.dataset.value;
+    const cur = effectiveMeta(S.recipes.find((x) => x.id === id))[kind];
+    const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
+    return saveMeta(id, { [kind]: next });
+  },
+  'meta-reset': (el) => saveMeta(Number(el.dataset.id), { course: null, seasons: null, occasions: null }),
+  rf: (el) => {
+    const f = recipeFilters(); const { key, value } = el.dataset;
+    f[key] = f[key] === value && value !== '' ? '' : value;
+    setRecipeFilters(f); renderRecipeResults(recipesWithStats());
+  },
+  'rf-clear': () => { const f = recipeFilters(); setRecipeFilters({ q: f.q, sort: f.sort }); renderRecipeResults(recipesWithStats()); },
   'browse-open': () => loadBrowse(document.querySelector('[data-form="dropbox-folder"] input[name=folder]')?.value || S.dropbox?.folder || ''),
   'browse-into': (el) => loadBrowse(el.dataset.path),
   'browse-close': () => { document.getElementById('folder-browser').innerHTML = ''; },
@@ -656,6 +779,9 @@ const changeActions = {
   },
   'ideas-count': (el) => { localStorage.setItem('count', el.value); setIdeas({ count: el.value }); },
   'ideas-fav': (el) => setIdeas({ favorites: el.value }),
+  'ideas-season': (el) => setIdeas({ season: el.value }),
+  'ideas-night': (el) => setIdeas({ night: el.value }),
+  'rf-select': (el) => { setRecipeFilters({ ...recipeFilters(), [el.dataset.key]: el.value }); renderRecipeResults(recipesWithStats()); },
 };
 
 function updateProgress() {

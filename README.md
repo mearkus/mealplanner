@@ -6,6 +6,9 @@ A shared meal planner for a family. Everyone signs in with their own Google acco
 - **Plan the week**, and get a **shopping list built automatically**: quantities are added up across meals, sorted by store aisle, and ticks sync live between phones.
 - **Remember favourites**: ⭐ a recipe and tap ✅ when you cook it. The app shows favourites you *haven't had in a while*.
 - **Choose how healthy the week is**: every recipe gets a 1–5 healthiness rating (Indulgent → Very healthy), set automatically and easy to change. Suggestions follow the goal you pick (Light / Balanced / Comfort / Anything), and richer recipes come with "make it lighter" swap ideas.
+- **Sort meals out**: every recipe has a course (Main / Side / Dessert / Breakfast / Other), the seasons it suits best and whether it's a weeknight or weekend meal. The app guesses these from the title, ingredients and time (marked *auto*); tap to set your own.
+- **Find things fast**: search titles, ingredients and tags; filter by course, season, weeknight/weekend, favourites, healthiness, 30-minute meals, "not cooked lately" and tags; sort by name, newest, longest since cooked, quickest, healthiest or most cooked.
+- **Suggestions that fit**: weekly ideas pick main dishes, prefer what's in season (or the season you choose) and weeknight/weekend meals if you ask; the plan suggests **sides** that go with your mains.
 - **Batch meals with shared ingredients**: the plan shows which meals to *cook together* (with prep-once tips), suggests recipes that *use up* what you're already buying, and the shopping list marks items used in more than one meal ♻️.
 
 It runs on **Cloudflare Workers' free plan** ($0), with a phone-friendly web app you add to your home screen.

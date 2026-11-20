@@ -2,6 +2,7 @@
 // so one family can never read or change another's rows.
 import { parseIngredientLine, categorize, isStaple, normalizeName } from '../public/lib/ingredients.js';
 import { scoreHealth } from '../public/lib/health.js';
+import { COURSES, SEASONS, OCCASIONS } from '../public/lib/classify.js';
 
 export class HttpError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
@@ -112,7 +113,8 @@ function toRecipe(r, ingredients = []) {
   return {
     id: r.id, title: r.title, servings: r.servings, prepMinutes: r.prep_minutes, instructions: r.instructions, notes: r.notes,
     tags: JSON.parse(r.tags || '[]'), health: r.health, healthSource: r.health_source, favorite: !!r.favorite,
-    source: r.source, sourcePath: r.source_path, updatedAt: r.updated_at,
+    source: r.source, sourcePath: r.source_path, updatedAt: r.updated_at, createdAt: r.created_at,
+    course: r.course ?? null, seasons: r.seasons ? JSON.parse(r.seasons) : null, occasions: r.occasions ? JSON.parse(r.occasions) : null,
     ingredients: ingredients.map((i) => ({ raw: i.raw, qty: i.qty, unit: i.unit, name: i.name, note: i.note, category: i.category, staple: !!i.staple })),
   };
 }
@@ -155,6 +157,16 @@ export function normalizeIngredients(list = []) {
   }).filter(Boolean);
 }
 
+/** Validates family-set metadata. undefined = leave as is, null = back to automatic. */
+function metaValue(kind, v) {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (kind === 'course') { if (!COURSES.includes(v)) throw new HttpError(400, 'Unknown course'); return v; }
+  const allowed = kind === 'seasons' ? SEASONS : OCCASIONS;
+  if (!Array.isArray(v) || v.some((x) => !allowed.includes(x))) throw new HttpError(400, `Unknown ${kind}`);
+  return JSON.stringify([...new Set(v)].sort((a, b) => allowed.indexOf(a) - allowed.indexOf(b)));
+}
+
 const clip = (s, n) => (s == null ? s : String(s).slice(0, n));
 
 export async function saveRecipe(db, hid, input, id = null) {
@@ -191,6 +203,10 @@ export async function saveRecipe(db, hid, input, id = null) {
       health_source, favorite, source, source_path, source_rev) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).bind(hid, ...Object.values(f)).first()).id;
   }
   const stmts = [bumpRecipesVersionStmt(db, hid)];
+  for (const kind of ['course', 'seasons', 'occasions']) {
+    const v = metaValue(kind, input[kind]);
+    if (v !== undefined) stmts.push(db.prepare(`UPDATE recipes SET ${kind} = ? WHERE id = ? AND household_id = ?`).bind(v, recipeId, hid));
+  }
   if (ingredients) {
     stmts.push(db.prepare('DELETE FROM ingredients WHERE recipe_id = ? AND household_id = ?').bind(recipeId, hid));
     ingredients.forEach((i, idx) => stmts.push(db.prepare(`INSERT INTO ingredients (recipe_id, household_id, position, raw, qty, unit, name, note, category, staple)
@@ -205,6 +221,10 @@ export async function patchRecipe(db, hid, id, patch) {
   if (patch.favorite != null) stmts.push(db.prepare('UPDATE recipes SET favorite = ? WHERE id = ? AND household_id = ?').bind(patch.favorite ? 1 : 0, id, hid));
   if (patch.health != null) stmts.push(db.prepare("UPDATE recipes SET health = ?, health_source = 'manual' WHERE id = ? AND household_id = ?")
     .bind(Math.max(1, Math.min(5, Math.round(Number(patch.health)))), id, hid));
+  for (const kind of ['course', 'seasons', 'occasions']) {
+    const v = metaValue(kind, patch[kind]);
+    if (v !== undefined) stmts.push(db.prepare(`UPDATE recipes SET ${kind} = ? WHERE id = ? AND household_id = ?`).bind(v, id, hid));
+  }
   if (stmts.length) await db.batch([...stmts, bumpRecipesVersionStmt(db, hid)]);
 }
 

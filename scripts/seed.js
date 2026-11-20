@@ -32,10 +32,25 @@ const SAMPLES = [
   { title: 'Spinach & Feta Omelette', servings: 2, prepMinutes: 15, tags: ['quick', 'vegetarian'],
     ingredients: ['6 eggs', '2 cups spinach', '1/2 cup feta cheese', '1 cup cherry tomatoes', '1 tbsp butter'],
     instructions: '1. Wilt spinach in butter. 2. Add beaten eggs, cook gently, top with feta and tomatoes.' },
+  { title: 'Garlic Roasted Broccoli', servings: 4, prepMinutes: 25, tags: ['vegetables'],
+    ingredients: ['1 head broccoli, cut into florets', '3 cloves garlic', '2 tbsp olive oil', '1 lemon'],
+    instructions: '1. Toss broccoli with oil and garlic.\n2. Roast at 425°F for 20 minutes; finish with lemon.' },
+  { title: 'Cilantro Lime Rice', servings: 4, prepMinutes: 25, tags: ['mexican'],
+    ingredients: ['1 cup jasmine rice', '1 bunch cilantro', '2 limes', '1 tbsp butter'],
+    instructions: '1. Cook rice. 2. Stir in butter, lime juice and chopped cilantro.' },
+  { title: 'Greek Salad', servings: 4, prepMinutes: 15, tags: ['greek'], favorite: true,
+    ingredients: ['3 tomatoes', '1 cucumber', '1/2 red onion', '4 oz feta cheese', '1/2 cup olives', '2 tbsp olive oil'],
+    instructions: '1. Chop and combine everything; dress with oil.' },
+  { title: 'Butternut Squash Soup', servings: 6, prepMinutes: 50, tags: ['soup', 'vegetarian'],
+    ingredients: ['1 butternut squash, cubed', '1 yellow onion', '4 cups vegetable broth', '1/2 cup coconut milk', '1 tsp ground cumin'],
+    instructions: '1. Soften onion, add squash and broth; simmer 25 minutes.\n2. Blend with coconut milk.' },
+  { title: 'Chocolate Chip Cookies', servings: 24, prepMinutes: 30, tags: ['baking'],
+    ingredients: ['2 1/4 cups flour', '1 cup butter', '3/4 cup sugar', '3/4 cup brown sugar', '2 eggs', '2 cups chocolate chips'],
+    instructions: '1. Cream butter and sugars; add eggs.\n2. Mix in flour and chips; bake at 375°F for 10 minutes.' },
 ];
 await call('/api/auth/dev', { email: 'demo@example.com', name: 'Demo', familyName: 'Demo family' });
 for (const { cooked, ...r } of SAMPLES) {
   const { ids: [id] } = await call('/api/import', { recipes: [r], source: 'sample' });
   if (cooked) await call(`/api/recipes/${id}/cooked`, { date: daysAgo(cooked) });
 }
-console.log(`Added ${SAMPLES.length} sample recipes. Sign in locally as demo@example.com (dev sign-in).`);
+console.log(`Added ${SAMPLES.length} sample recipes (mains, sides and a dessert). Sign in locally as demo@example.com (dev sign-in).`);

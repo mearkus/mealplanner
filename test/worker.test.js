@@ -78,6 +78,26 @@ test('family shares recipes, plan, shopping and history, with attribution', asyn
   assert.equal(after.cookLog[0].cookedBy, 'Sam');
 });
 
+test('course, seasons and weeknight/weekend can be set, validated and reset', async () => {
+  const id = (await mark('/api/state')).body.recipes.find((r) => r.title === 'Tacos').id;
+  const before = (await sam('/api/state')).body.recipes.find((r) => r.id === id);
+  assert.equal(before.course, null); assert.equal(before.seasons, null); // not set → the app guesses
+  assert.equal((await sam(`/api/recipes/${id}`, { course: 'side', seasons: ['summer', 'spring', 'summer'], occasions: ['weeknight'] }, 'PATCH')).status, 200);
+  const after = (await mark('/api/state')).body.recipes.find((r) => r.id === id);
+  assert.equal(after.course, 'side');
+  assert.deepEqual(after.seasons, ['spring', 'summer']); // de-duplicated and ordered
+  assert.deepEqual(after.occasions, ['weeknight']);
+  assert.equal((await sam(`/api/recipes/${id}`, { course: 'brunch' }, 'PATCH')).status, 400);
+  assert.equal((await sam(`/api/recipes/${id}`, { seasons: ['monsoon'] }, 'PATCH')).status, 400);
+  await sam(`/api/recipes/${id}`, { course: null, seasons: null, occasions: null }, 'PATCH');
+  const reset = (await mark('/api/state')).body.recipes.find((r) => r.id === id);
+  assert.equal(reset.course, null); assert.equal(reset.seasons, null); assert.equal(reset.occasions, null);
+  // Saving the recipe text doesn't wipe the family's choices
+  await mark(`/api/recipes/${id}`, { seasons: [] }, 'PATCH');
+  await mark(`/api/recipes/${id}`, { title: 'Tacos', ingredients: ['1 bunch cilantro', '2 limes', '1 lb chicken thighs'] }, 'PUT');
+  assert.deepEqual((await mark('/api/state')).body.recipes.find((r) => r.id === id).seasons, []);
+});
+
 test('another family cannot see or touch our data', async () => {
   const neighbour = client();
   const inv2 = (await mark('/api/family/invites', {})).body.code;

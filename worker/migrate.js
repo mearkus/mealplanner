@@ -2,8 +2,9 @@
 // Uses the same bookkeeping table as `wrangler d1 migrations apply` (d1_migrations), so the two never clash.
 // Add new migration files here in order (a test checks this list matches the migrations/ folder).
 import m0001 from '../migrations/0001_init.sql';
+import m0002 from '../migrations/0002_recipe_meta.sql';
 
-export const MIGRATIONS = [['0001_init.sql', m0001]];
+export const MIGRATIONS = [['0001_init.sql', m0001], ['0002_recipe_meta.sql', m0002]];
 
 const TRACKING_TABLE = `CREATE TABLE IF NOT EXISTS d1_migrations(
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
